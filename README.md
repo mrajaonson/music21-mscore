@@ -8,7 +8,7 @@ music21 + musescore
 
 ## Requirements
 
-* python 3.11
+* python 3.13
 
 ## Installation
 
@@ -17,7 +17,7 @@ music21 + musescore
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install music21 --break-system-packages
+pip install -r requirements.txt
 
 # libb2
 brew install libb2
@@ -29,5 +29,6 @@ python3 -m music21.configure
 ## Use
 
 ```shell
-
+python3 solfa2xml.py sample.txt
+mscore -o sample.pdf sample.xml 2>/dev/null
 ```
