@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Tonic Solfa .txt  →  MusicXML (.xml) converter
+Requires: pip install music21
 Output is compatible with MuseScore 4.
 """
 
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from music21 import (
     stream, note, pitch, key, meter, tempo, clef, bar,
-    duration, metadata, tie, repeat, expressions,
+    duration, metadata, tie, repeat, expressions, dynamics,
 )
 
 from config import (
@@ -22,6 +23,7 @@ from config import (
     VOICE_BASE_LABELS, DEFAULT_VOICE_ORDER, VOICE_CONFIG,
     MODULATION_SEPARATOR, REPEAT_START, REPEAT_END, VOLTA_1_START,
     FINE, DA_CAPO_SEGNO,
+    VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM, TEXT_EXPRESSIONS,
 )
 
 
@@ -33,11 +35,12 @@ class NoteEvent:
     """A single parsed note / rest / hold event."""
     __slots__ = ("solfa", "semitone", "octave_shift", "is_rest", "is_hold",
                  "is_melisma", "is_chromatic_sharp", "is_chromatic_flat",
-                 "raw")
+                 "raw", "dynamic")
 
     def __init__(self, *, solfa=None, semitone=0, octave_shift=0,
                  is_rest=False, is_hold=False, is_melisma=False,
-                 is_chromatic_sharp=False, is_chromatic_flat=False, raw=""):
+                 is_chromatic_sharp=False, is_chromatic_flat=False, raw="",
+                 dynamic=None):
         self.solfa = solfa
         self.semitone = semitone
         self.octave_shift = octave_shift
@@ -47,6 +50,7 @@ class NoteEvent:
         self.is_chromatic_sharp = is_chromatic_sharp
         self.is_chromatic_flat = is_chromatic_flat
         self.raw = raw
+        self.dynamic = dynamic  # e.g. "p", "f", "ff", "<", ">", "cresc"
 
     def __repr__(self):
         if self.is_rest:
@@ -119,6 +123,9 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
 #  NOTE TOKEN PARSING
 # ══════════════════════════════════════════════════════════════════════
 
+# Regex for inline dynamics: (p), (ff), (<), (>), (cresc), etc.
+_DYNAMIC_PREFIX_RE = re.compile(r'^\(([^)]+)\)')
+
 def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     """
     Parse one note token from the beginning of *s*.
@@ -126,6 +133,16 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     """
     if not s:
         return None, s
+
+    # --- dynamic prefix (p), (f), (<), (cresc), etc. ---
+    dyn = None
+    dm = _DYNAMIC_PREFIX_RE.match(s)
+    if dm:
+        dyn = dm.group(1)
+        s = s[dm.end():]
+        if not s:
+            # Dynamic with no note after it — return as a rest with dynamic
+            return NoteEvent(is_rest=True, raw=" ", dynamic=dyn), s
 
     # --- melisma prefix ---
     is_melisma = False
@@ -137,13 +154,13 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
 
     # --- hold ---
     if s[0] == HOLD:
-        return NoteEvent(is_hold=True, raw="-"), s[1:]
+        return NoteEvent(is_hold=True, raw="-", dynamic=dyn), s[1:]
 
     # --- rest (* or **) ---
     if s.startswith(REST_DOUBLE_STAR):
-        return NoteEvent(is_rest=True, raw="**"), s[2:]
+        return NoteEvent(is_rest=True, raw="**", dynamic=dyn), s[2:]
     if s.startswith(REST_STAR):
-        return NoteEvent(is_rest=True, raw="*"), s[1:]
+        return NoteEvent(is_rest=True, raw="*", dynamic=dyn), s[1:]
 
     # --- solfa note (longest match) ---
     matched_solfa = None
@@ -152,6 +169,9 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
             matched_solfa = tok
             break
     if matched_solfa is None:
+        if dyn:
+            # Had a dynamic but no recognisable note — attach to next event
+            return NoteEvent(is_rest=True, raw=" ", dynamic=dyn), s
         return None, s
 
     s = s[len(matched_solfa):]
@@ -174,6 +194,7 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         is_chromatic_sharp=is_sharp, is_chromatic_flat=is_flat,
         raw=matched_solfa + OCTAVE_UP_CHAR * max(0, octave_shift)
                          + OCTAVE_DOWN_CHAR * max(0, -octave_shift),
+        dynamic=dyn,
     )
     return evt, s
 
@@ -183,10 +204,13 @@ def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
     Parse a beat string (content between : separators) into NoteEvents.
     Dots separate sub-beat groups; within a group, multiple notes can be
     concatenated. All tokens are flattened for duration assignment.
+
+    Empty beat (blank) = rest (silence). Only - is a hold.
+    * and ** are explicit rests (same result, just more visible in notation).
     """
     beat_str = beat_str.strip()
 
-    # A fully empty beat = rest
+    # A fully empty beat = rest (silence)
     if not beat_str:
         return [NoteEvent(is_rest=True, raw=" ")]
 
@@ -376,9 +400,18 @@ def parse_lyrics_line(line: str) -> tuple[str | None, str | int, list[str]]:
 #  FILE PARSING  (top-level)
 # ══════════════════════════════════════════════════════════════════════
 
+# Regex for block-level dynamics: a line that is just (p), (f), (Cresc), etc.
+_BLOCK_DYNAMIC_RE = re.compile(r'^\(([^)]+)\)$')
+
 def _is_note_line(line: str) -> bool:
     """Heuristic: a note line contains barlines |."""
     return "|" in line
+
+
+def _is_block_dynamic(line: str) -> str | None:
+    """Check if a line is a standalone block dynamic like (p), (Cresc). Returns the value or None."""
+    m = _BLOCK_DYNAMIC_RE.match(line.strip())
+    return m.group(1) if m else None
 
 
 def parse_file(filepath: str) -> dict:
@@ -402,7 +435,8 @@ def parse_file(filepath: str) -> dict:
     default_voice_order = list(DEFAULT_VOICE_ORDER)
     voice_index = 0
     prev_was_note_line = False
-    last_voice_label = "S"  # tracks the last voice parsed before a lyrics line
+    last_voice_label = "S"
+    pending_block_dynamic = None
 
     for line in remaining:
         stripped = line.strip()
@@ -413,9 +447,13 @@ def parse_file(filepath: str) -> dict:
                 prev_was_note_line = False
             continue
 
+        # Check for block-level dynamic: (p), (f), (Cresc), etc.
+        block_dyn = _is_block_dynamic(stripped)
+        if block_dyn:
+            pending_block_dynamic = block_dyn
+            continue
+
         if _is_note_line(stripped):
-            # If we just came from a non-note line (lyrics, blank, or start),
-            # reset voice cycling back to S
             if not prev_was_note_line:
                 voice_index = 0
             prev_was_note_line = True
@@ -428,7 +466,14 @@ def parse_file(filepath: str) -> dict:
                     label = f"V{voice_index + 1}"
                 voice_index += 1
             else:
-                voice_index += 1  # advance even for explicit labels
+                voice_index += 1
+
+            # Inject pending block dynamic into first beat of first measure
+            if pending_block_dynamic and measures:
+                first_beat = measures[0].get("beats", [])
+                if first_beat and first_beat[0]:
+                    first_beat[0][0].dynamic = pending_block_dynamic
+                pending_block_dynamic = None
 
             last_voice_label = label
 
@@ -706,6 +751,33 @@ def _make_rest(ql: float) -> note.Rest:
     return r
 
 
+def _apply_dynamic(measure: stream.Measure, dyn_str: str):
+    """
+    Append a dynamic, hairpin, or text expression to a measure.
+    dyn_str can be: "p", "ff", "<", ">", "cresc", etc.
+    """
+    if dyn_str in VALID_DYNAMICS:
+        d = dynamics.Dynamic(dyn_str)
+        measure.append(d)
+    elif dyn_str == HAIRPIN_CRESC:
+        # Start a crescendo wedge
+        w = dynamics.Crescendo()
+        measure.append(w)
+    elif dyn_str == HAIRPIN_DIM:
+        # Start a diminuendo wedge
+        w = dynamics.Diminuendo()
+        measure.append(w)
+    elif dyn_str in TEXT_EXPRESSIONS:
+        te = expressions.TextExpression(TEXT_EXPRESSIONS[dyn_str])
+        te.style.fontStyle = "italic"
+        measure.append(te)
+    else:
+        # Unknown — treat as text expression
+        te = expressions.TextExpression(dyn_str)
+        te.style.fontStyle = "italic"
+        measure.append(te)
+
+
 def build_score(parsed: dict) -> stream.Score:
     """Convert fully parsed data into a music21 Score."""
     props = parsed["properties"]
@@ -728,8 +800,19 @@ def build_score(parsed: dict) -> stream.Score:
     bpm = props.get("TEMPO", DEFAULTS["TEMPO"])
 
     ts = meter.TimeSignature(time_sig_str)
-    tempo_mark = tempo.MetronomeMark(number=bpm)
     ks = key.Key(current_key)
+
+    # Compute measure duration for whole-measure rests
+    ts_num, ts_den = map(int, time_sig_str.split("/"))
+    measure_ql = ts_num * (4.0 / ts_den)
+
+    # Create tempo mark with proper beat unit from time signature denominator
+    # denominator 4 → quarter note, 8 → eighth note, 2 → half note, etc.
+    beat_duration = duration.Duration(quarterLength=4.0 / ts_den)
+    tempo_mark = tempo.MetronomeMark(
+        referent=beat_duration,
+        number=bpm,
+    )
 
     # ── Build each voice part ──
     for voice_label, measures_raw in voices.items():
@@ -796,51 +879,62 @@ def build_score(parsed: dict) -> stream.Score:
 
             first_event_in_measure = True
 
-            for te in events:
-                evt = te.event
-                ql = te.quarter_length
+            # Detect whole-measure rest: all events are rests, no notes or holds
+            all_rests = all(te.event.is_rest for te in events) if events else True
+            if all_rests and events:
+                # Create a single whole-measure rest
+                r = note.Rest()
+                r.duration = duration.Duration(quarterLength=measure_ql)
+                r.fullMeasure = True
+                # Check if any rest carries a dynamic
+                for te in events:
+                    if te.event.dynamic:
+                        _apply_dynamic(m21_measure, te.event.dynamic)
+                        break
+                m21_measure.append(r)
+                prev_note_obj = None
+            else:
+                for te in events:
+                    evt = te.event
+                    ql = te.quarter_length
 
-                if evt.is_rest:
-                    r = _make_rest(ql)
-                    m21_measure.append(r)
-                    prev_note_obj = None
-                    needs_tie_start = False
-                elif evt.is_hold:
-                    # Cross-measure hold: tie from previous measure's last note
-                    if prev_note_obj is not None and first_event_in_measure:
-                        # Create a tied continuation note
-                        tied_n = _make_note(prev_note_obj.pitch, ql)
-                        prev_note_obj.tie = tie.Tie("start")
-                        tied_n.tie = tie.Tie("stop")
-                        m21_measure.append(tied_n)
-                        prev_note_obj = tied_n
-                    else:
-                        # Should have been consolidated; treat as rest if orphaned
-                        m21_measure.append(_make_rest(ql))
+                    # Apply dynamics if present on this event
+                    if evt.dynamic:
+                        _apply_dynamic(m21_measure, evt.dynamic)
+
+                    if evt.is_rest:
+                        r = _make_rest(ql)
+                        m21_measure.append(r)
                         prev_note_obj = None
-                else:
-                    # Normal note
-                    p = solfa_to_pitch(evt, active_key, voice_octave)
-                    n = _make_note(p, ql)
+                        needs_tie_start = False
+                    elif evt.is_hold:
+                        # Cross-measure hold: tie from previous measure's last note
+                        if prev_note_obj is not None and first_event_in_measure:
+                            tied_n = _make_note(prev_note_obj.pitch, ql)
+                            prev_note_obj.tie = tie.Tie("start")
+                            tied_n.tie = tie.Tie("stop")
+                            m21_measure.append(tied_n)
+                            prev_note_obj = tied_n
+                        else:
+                            m21_measure.append(_make_rest(ql))
+                            prev_note_obj = None
+                    else:
+                        # Normal note
+                        p = solfa_to_pitch(evt, active_key, voice_octave)
+                        n = _make_note(p, ql)
 
-                    # Assign lyrics (one syllable per non-melisma note per verse)
-                    if not evt.is_melisma:
-                        for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
-                            if cursor < len(syls):
-                                syl = syls[cursor]
-                                # Check if next syllable continues the word (hyphen split)
-                                # music21 lyric syllabic types: begin, middle, end, single
-                                syllabic = "single"
-                                # Look back: was previous syllable part of same word?
-                                # We track this via a simple heuristic based on the
-                                # original lyrics line (hyphen-separated parts)
-                                n.addLyric(syl, lyricNumber=lyric_num)
-                                lyrics_cursors[lyric_num] = (syls, cursor + 1)
+                        # Assign lyrics (one syllable per non-melisma note per verse)
+                        if not evt.is_melisma:
+                            for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
+                                if cursor < len(syls):
+                                    syl = syls[cursor]
+                                    n.addLyric(syl, lyricNumber=lyric_num)
+                                    lyrics_cursors[lyric_num] = (syls, cursor + 1)
 
-                    m21_measure.append(n)
-                    prev_note_obj = n
+                        m21_measure.append(n)
+                        prev_note_obj = n
 
-                first_event_in_measure = False
+                    first_event_in_measure = False
 
             # Repeat end
             if REPEAT_END in markers:

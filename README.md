@@ -19,8 +19,8 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# libb2
-brew install libb2
+# Install system dependencies
+brew install libb2 tesseract poppler
 
 # configure music21
 python3 -m music21.configure

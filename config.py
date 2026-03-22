@@ -120,27 +120,89 @@ VALID_KEYS = [
 #   :                  beat separator (splits a measure into beats)
 #   .                  sub-beat separator (splits a beat into subdivisions)
 #   -                  hold / tie — extends the previous note for that slot
-#   (space)            rest for that slot
-#   *                  explicit one-beat rest
+#   (empty beat)       rest (silence) — no note is sounding
+#   *                  explicit rest (same as empty, just more visible)
 #   **                 explicit two-beat rest
+#
+# Summary:
+#   -         → hold (continue previous note)
+#   (blank)   → rest (silence)
+#   *         → rest (silence, explicit)
+#   **        → two-beat rest (silence, explicit)
+#
+# WHOLE-MEASURE REST:
+#   If a measure contains ONLY separators and blanks (no notes, no holds),
+#   it becomes a single whole-measure rest (centered in MuseScore).
+#   | : : : |      → whole-measure rest (not 4 quarter rests)
+#   | : |          → whole-measure rest in 2/4
+#   But:
+#   | d : : : |    → note + 3 beat rests (partial, NOT whole-measure)
+#   | - : : : |    → hold + 3 beat rests (partial, NOT whole-measure)
 #
 # Duration logic:
 #   In time signature N/D, each measure has N beats.
 #   |d:r:m:f|      → 4 beats, each note gets 1 beat  (quarter note in 4/4)
 #   |d:-:r:m|      → d lasts 2 beats (beat 1 + hold on beat 2)
+#   |d: :r:m|      → d for 1 beat, silence on beat 2, then r m
 #   |d.r:m:f:s|    → beat 1 subdivided: d gets half-beat, r gets half-beat
 #   |d.rm:…|       → beat 1 subdivided into 3: d, r, m (triplet feel)
 #   |d._r:m|       → d.r is one beat, but _ before r means r is tied to d
 #                     for lyrics purposes (counts as one syllable)
+#   |*:r:m:f|      → beat 1 is an explicit rest, then r m f
 
 BARLINE            = "|"
 DOUBLE_BARLINE     = "||"
 BEAT_SEPARATOR     = ":"
 SUBBEAT_SEPARATOR  = "."
 HOLD               = "-"
-REST_SPACE         = " "       # a space in a beat position = rest
 REST_STAR          = "*"       # explicit 1-beat rest
 REST_DOUBLE_STAR   = "**"      # explicit 2-beat rest
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 5b. DYNAMICS & EXPRESSION MARKS
+# ─────────────────────────────────────────────────────────────────────
+# Dynamics are written in parentheses. Two modes:
+#
+# INLINE (attached to a specific note):
+#   Place the dynamic right before the note, no space:
+#     | (p)d : r : m |        → piano on "d"
+#     | d : (f)r : m |        → forte on "r"
+#     | (pp)d.r : (ff)m : s | → pianissimo on "d", fortissimo on "m"
+#
+# BLOCK (applies to the next block of note lines):
+#   Place the dynamic on its own line before the note block:
+#     (p)
+#     | d : r : m : f |
+#     | d : d : d : d |
+#
+# HAIRPINS (crescendo / diminuendo):
+#   (<)  → start crescendo hairpin
+#   (>)  → start diminuendo hairpin
+#   Hairpin ends at the next dynamic marking or end of measure.
+#     | (p)d : (<)r : m | d : r : (f)m |   → cresc from r to m
+#     | (f)d : (>)r : m | d : r : (p)m |   → dim from r to m
+#
+# TEXT EXPRESSIONS (cresc., dim., etc.):
+#   (cresc)  → text "cresc." in the score
+#   (dim)    → text "dim." in the score
+#     | (cresc)d : r : m | d : r : (f)m |
+#
+# Available dynamics:
+#   (ppp) (pp) (p) (mp) (mf) (f) (ff) (fff) (sf) (sfz) (fp)
+
+VALID_DYNAMICS = {
+    "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "sf", "sfz", "fp",
+}
+HAIRPIN_CRESC  = "<"     # inside parens: (<)
+HAIRPIN_DIM    = ">"     # inside parens: (>)
+TEXT_EXPRESSIONS = {
+    "cresc": "cresc.",
+    "dim":   "dim.",
+    "rit":   "rit.",
+    "accel": "accel.",
+    "Cresc": "Cresc.",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────
