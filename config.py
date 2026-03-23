@@ -162,19 +162,13 @@ REST_DOUBLE_STAR   = "**"      # explicit 2-beat rest
 # ─────────────────────────────────────────────────────────────────────
 # 5b. DYNAMICS & EXPRESSION MARKS
 # ─────────────────────────────────────────────────────────────────────
-# Dynamics are written in parentheses. Two modes:
+# Dynamics and expressions are written in parentheses, always INLINE
+# (attached to a specific note inside a measure).
 #
-# INLINE (attached to a specific note):
-#   Place the dynamic right before the note, no space:
+# DYNAMICS (attached to a note):
 #     | (p)d : r : m |        → piano on "d"
 #     | d : (f)r : m |        → forte on "r"
 #     | (pp)d.r : (ff)m : s | → pianissimo on "d", fortissimo on "m"
-#
-# BLOCK (applies to the next block of note lines):
-#   Place the dynamic on its own line before the note block:
-#     (p)
-#     | d : r : m : f |
-#     | d : d : d : d |
 #
 # HAIRPINS (crescendo / diminuendo):
 #   (<)  → start crescendo hairpin
@@ -188,6 +182,14 @@ REST_DOUBLE_STAR   = "**"      # explicit 2-beat rest
 #   (dim)    → text "dim." in the score
 #     | (cresc)d : r : m | d : r : (f)m |
 #
+# FERMATA (hold/pause over a note):
+#   (^)  → fermata on the next note
+#     | d : r : (^)m : f |     → fermata on m
+#     | d : (^)(p)r : m |      → fermata + piano on r (can combine)
+#
+# COMBINING: multiple parenthesized prefixes can be chained:
+#     | (^)(f)d : r : m |      → fermata + forte on d
+#
 # Available dynamics:
 #   (ppp) (pp) (p) (mp) (mf) (f) (ff) (fff) (sf) (sfz) (fp)
 
@@ -196,6 +198,7 @@ VALID_DYNAMICS = {
 }
 HAIRPIN_CRESC  = "<"     # inside parens: (<)
 HAIRPIN_DIM    = ">"     # inside parens: (>)
+FERMATA        = "^"     # inside parens: (^)
 TEXT_EXPRESSIONS = {
     "cresc": "cresc.",
     "dim":   "dim.",

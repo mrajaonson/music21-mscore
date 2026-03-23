@@ -5,12 +5,12 @@ class NoteEvent:
     """A single parsed note / rest / hold event."""
     __slots__ = ("solfa", "semitone", "octave_shift", "is_rest", "is_hold",
                  "is_melisma", "is_chromatic_sharp", "is_chromatic_flat",
-                 "raw", "dynamic")
+                 "raw", "dynamic", "fermata")
 
     def __init__(self, *, solfa=None, semitone=0, octave_shift=0,
                  is_rest=False, is_hold=False, is_melisma=False,
                  is_chromatic_sharp=False, is_chromatic_flat=False, raw="",
-                 dynamic=None):
+                 dynamic=None, fermata=False):
         self.solfa = solfa
         self.semitone = semitone
         self.octave_shift = octave_shift
@@ -21,6 +21,7 @@ class NoteEvent:
         self.is_chromatic_flat = is_chromatic_flat
         self.raw = raw
         self.dynamic = dynamic  # e.g. "p", "f", "ff", "<", ">", "cresc"
+        self.fermata = fermata  # True if (^) was present
 
     def __repr__(self):
         if self.is_rest:

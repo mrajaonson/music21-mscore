@@ -14,7 +14,7 @@ from config import (
     NOTE_MELISMA_PREFIX, LYRICS_HYPHEN,
     VOICE_BASE_LABELS, DEFAULT_VOICE_ORDER,
     MODULATION_SEPARATOR, REPEAT_START, REPEAT_END, VOLTA_1_START,
-    FINE, DA_CAPO_SEGNO,
+    FINE, DA_CAPO_SEGNO, FERMATA,
 )
 
 
@@ -70,32 +70,44 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     if not s:
         return None, s
 
-    # --- dynamic prefix ---
+    # --- parenthesized prefixes: dynamics, hairpins, fermata ---
+    # Can have multiple: (^)(p)d = fermata + piano on d
     dyn = None
-    dm = _DYNAMIC_PREFIX_RE.match(s)
-    if dm:
-        dyn = dm.group(1)
+    has_fermata = False
+    while s:
+        dm = _DYNAMIC_PREFIX_RE.match(s)
+        if not dm:
+            break
+        value = dm.group(1)
         s = s[dm.end():]
-        if not s:
-            return NoteEvent(is_rest=True, raw=" ", dynamic=dyn), s
+        if value == FERMATA:
+            has_fermata = True
+        else:
+            dyn = value  # last non-fermata dynamic wins
+
+    if not s and (dyn or has_fermata):
+        return NoteEvent(is_rest=True, raw=" ", dynamic=dyn, fermata=has_fermata), s
 
     # --- melisma prefix ---
     is_melisma = False
-    if s.startswith(NOTE_MELISMA_PREFIX):
+    if s and s.startswith(NOTE_MELISMA_PREFIX):
         is_melisma = True
         s = s[1:]
         if not s:
             return None, s
 
+    if not s:
+        return None, s
+
     # --- hold ---
     if s[0] == HOLD:
-        return NoteEvent(is_hold=True, raw="-", dynamic=dyn), s[1:]
+        return NoteEvent(is_hold=True, raw="-", dynamic=dyn, fermata=has_fermata), s[1:]
 
     # --- rest (* or **) ---
     if s.startswith(REST_DOUBLE_STAR):
-        return NoteEvent(is_rest=True, raw="**", dynamic=dyn), s[2:]
+        return NoteEvent(is_rest=True, raw="**", dynamic=dyn, fermata=has_fermata), s[2:]
     if s.startswith(REST_STAR):
-        return NoteEvent(is_rest=True, raw="*", dynamic=dyn), s[1:]
+        return NoteEvent(is_rest=True, raw="*", dynamic=dyn, fermata=has_fermata), s[1:]
 
     # --- solfa note (longest match) ---
     matched_solfa = None
@@ -104,8 +116,8 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
             matched_solfa = tok
             break
     if matched_solfa is None:
-        if dyn:
-            return NoteEvent(is_rest=True, raw=" ", dynamic=dyn), s
+        if dyn or has_fermata:
+            return NoteEvent(is_rest=True, raw=" ", dynamic=dyn, fermata=has_fermata), s
         return None, s
 
     s = s[len(matched_solfa):]
@@ -128,7 +140,7 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         is_chromatic_sharp=is_sharp, is_chromatic_flat=is_flat,
         raw=matched_solfa + OCTAVE_UP_CHAR * max(0, octave_shift)
                          + OCTAVE_DOWN_CHAR * max(0, -octave_shift),
-        dynamic=dyn,
+        dynamic=dyn, fermata=has_fermata,
     )
     return evt, s
 
@@ -281,18 +293,9 @@ def parse_lyrics_line(line: str) -> tuple[str | None, str | int, list[str]]:
 #  FILE PARSING  (top-level)
 # ──────────────────────────────────────────────────────────────────────
 
-_BLOCK_DYNAMIC_RE = re.compile(r'^\(([^)]+)\)$')
-
-
 def _is_note_line(line: str) -> bool:
     """Heuristic: a note line contains barlines |."""
     return "|" in line
-
-
-def _is_block_dynamic(line: str) -> str | None:
-    """Check if a line is a standalone block dynamic."""
-    m = _BLOCK_DYNAMIC_RE.match(line.strip())
-    return m.group(1) if m else None
 
 
 def parse_file(filepath: str) -> dict:
@@ -312,7 +315,6 @@ def parse_file(filepath: str) -> dict:
     voice_index = 0
     prev_was_note_line = False
     last_voice_label = "S"
-    pending_block_dynamic = None
 
     for line in remaining:
         stripped = line.strip()
@@ -320,11 +322,6 @@ def parse_file(filepath: str) -> dict:
         if not stripped:
             if prev_was_note_line:
                 prev_was_note_line = False
-            continue
-
-        block_dyn = _is_block_dynamic(stripped)
-        if block_dyn:
-            pending_block_dynamic = block_dyn
             continue
 
         if _is_note_line(stripped):
@@ -341,12 +338,6 @@ def parse_file(filepath: str) -> dict:
                 voice_index += 1
             else:
                 voice_index += 1
-
-            if pending_block_dynamic and measures:
-                first_beat = measures[0].get("beats", [])
-                if first_beat and first_beat[0]:
-                    first_beat[0][0].dynamic = pending_block_dynamic
-                pending_block_dynamic = None
 
             last_voice_label = label
 

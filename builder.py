@@ -123,14 +123,10 @@ def build_score(parsed: dict) -> stream.Score:
     base_octave = props.get("OCTAVE", DEFAULTS["OCTAVE"])
     bpm = props.get("TEMPO", DEFAULTS["TEMPO"])
 
-    ts = meter.TimeSignature(time_sig_str)
-    ks = key.Key(current_key)
-
     ts_num, ts_den = map(int, time_sig_str.split("/"))
     measure_ql = ts_num * (4.0 / ts_den)
 
-    beat_duration = duration.Duration(quarterLength=4.0 / ts_den)
-    tempo_mark = tempo.MetronomeMark(referent=beat_duration, number=bpm)
+    is_first_part = True
 
     # ── Build each voice part ──
     for voice_label, measures_raw in voices.items():
@@ -139,10 +135,11 @@ def build_score(parsed: dict) -> stream.Score:
         part.partName = _get_voice_full_name(voice_label)
 
         part.insert(0, _get_instrument(voice_label))
+
+        # Fresh objects per part (music21 objects can only belong to one stream)
         part.append(_get_clef(voice_label))
-        part.append(ks)
-        part.append(ts)
-        part.append(tempo_mark)
+        part.append(key.Key(current_key))
+        part.append(meter.TimeSignature(time_sig_str))
 
         voice_octave = base_octave + _get_octave_offset(voice_label)
 
@@ -165,6 +162,12 @@ def build_score(parsed: dict) -> stream.Score:
 
         for m_idx, events in enumerate(timed):
             m21_measure = stream.Measure(number=m_idx + 1)
+
+            # Tempo mark: only in measure 1 of the first part
+            if m_idx == 0 and is_first_part:
+                beat_dur = duration.Duration(quarterLength=4.0 / ts_den)
+                m21_measure.insert(0, tempo.MetronomeMark(
+                    referent=beat_dur, number=bpm))
 
             markers = measures_raw[m_idx].get("markers", []) if m_idx < len(measures_raw) else []
             modulations = measures_raw[m_idx].get("modulations", []) if m_idx < len(measures_raw) else []
@@ -203,7 +206,10 @@ def build_score(parsed: dict) -> stream.Score:
                         _apply_dynamic(m21_measure, evt.dynamic)
 
                     if evt.is_rest:
-                        m21_measure.append(_make_rest(ql))
+                        r = _make_rest(ql)
+                        if evt.fermata:
+                            r.expressions.append(expressions.Fermata())
+                        m21_measure.append(r)
                         prev_note_obj = None
                         needs_tie_start = False
                     elif evt.is_hold:
@@ -211,6 +217,8 @@ def build_score(parsed: dict) -> stream.Score:
                             tied_n = _make_note(prev_note_obj.pitch, ql)
                             prev_note_obj.tie = tie.Tie("start")
                             tied_n.tie = tie.Tie("stop")
+                            if evt.fermata:
+                                tied_n.expressions.append(expressions.Fermata())
                             m21_measure.append(tied_n)
                             prev_note_obj = tied_n
                         else:
@@ -219,6 +227,9 @@ def build_score(parsed: dict) -> stream.Score:
                     else:
                         p = solfa_to_pitch(evt, active_key, voice_octave)
                         n = _make_note(p, ql)
+
+                        if evt.fermata:
+                            n.expressions.append(expressions.Fermata())
 
                         if not evt.is_melisma:
                             for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
@@ -251,5 +262,6 @@ def build_score(parsed: dict) -> stream.Score:
                 last_meas.rightBarline = bar.Barline("final")
 
         score.append(part)
+        is_first_part = False
 
     return score
