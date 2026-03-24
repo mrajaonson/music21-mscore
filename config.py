@@ -172,14 +172,15 @@ REST_DOUBLE_STAR   = "**"      # explicit 2-beat rest
 #
 # HAIRPINS (crescendo / diminuendo):
 #   (<)  → start crescendo hairpin
-#   (>)  → start diminuendo hairpin
-#   Hairpin ends at the next dynamic marking or end of measure.
-#     | (p)d : (<)r : m | d : r : (f)m |   → cresc from r to m
-#     | (f)d : (>)r : m | d : r : (p)m |   → dim from r to m
+# CRESCENDO / DIMINUENDO:
+#   (<)  → "cresc." text in the score
+#   (>)  → "dim." text in the score
+#     | (p)d : (<)r : m | d : r : (f)m |   → cresc. on r
+#     | (f)d : (>)r : m | d : r : (p)m |   → dim. on r
 #
 # TEXT EXPRESSIONS (cresc., dim., etc.):
-#   (cresc)  → text "cresc." in the score
-#   (dim)    → text "dim." in the score
+#   (cresc)  → text "cresc." in the score  (same as (<))
+#   (dim)    → text "dim." in the score    (same as (>))
 #     | (cresc)d : r : m | d : r : (f)m |
 #
 # FERMATA (hold/pause over a note):

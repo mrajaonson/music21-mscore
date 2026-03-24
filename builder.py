@@ -104,13 +104,17 @@ def _apply_dynamic(measure: stream.Measure, dyn_str: str):
         d.placement = "above"
         measure.append(d)
     elif dyn_str == HAIRPIN_CRESC:
-        w = dynamics.Crescendo()
-        w.placement = "above"
-        measure.append(w)
+        # Crescendo hairpin needs start+end notes (spanner) which is complex.
+        # Use italic text "cresc." which MuseScore reads reliably.
+        te = expressions.TextExpression("cresc.")
+        te.style.fontStyle = "italic"
+        te.placement = "above"
+        measure.append(te)
     elif dyn_str == HAIRPIN_DIM:
-        w = dynamics.Diminuendo()
-        w.placement = "above"
-        measure.append(w)
+        te = expressions.TextExpression("dim.")
+        te.style.fontStyle = "italic"
+        te.placement = "above"
+        measure.append(te)
     elif dyn_str in TEXT_EXPRESSIONS:
         te = expressions.TextExpression(TEXT_EXPRESSIONS[dyn_str])
         te.style.fontStyle = "italic"
