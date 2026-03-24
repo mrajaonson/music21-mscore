@@ -1,5 +1,7 @@
 """Build a music21 Score from parsed tonic solfa data."""
 
+from datetime import date
+
 from music21 import (
     stream, note, pitch, key, meter, tempo, clef, bar,
     duration, metadata, tie, repeat, expressions, dynamics,
@@ -116,6 +118,7 @@ def build_score(parsed: dict) -> stream.Score:
     md.composer = props.get("COMPOSER", DEFAULTS["COMPOSER"])
     if props.get("AUTHOR"):
         md.lyricist = props["AUTHOR"]
+    md.date = date.today().isoformat()
     score.metadata = md
 
     time_sig_str = props.get("TIMESIG", DEFAULTS["TIMESIG"])

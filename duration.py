@@ -41,6 +41,7 @@ def assign_durations(measures: list[dict], time_sig: str) -> list[list[TimedEven
 def consolidate_holds(timed_measures: list[list[TimedEvent]]) -> list[list[TimedEvent]]:
     """
     Merge consecutive holds into the preceding note, extending its duration.
+    Fermata and dynamics on a hold are transferred to the note being extended.
     Cross-measure holds are handled separately via ties.
     """
     result = []
@@ -48,7 +49,14 @@ def consolidate_holds(timed_measures: list[list[TimedEvent]]) -> list[list[Timed
         consolidated: list[TimedEvent] = []
         for te in events:
             if te.event.is_hold and consolidated:
+                # Extend previous note's duration
                 consolidated[-1].quarter_length += te.quarter_length
+                # Transfer fermata from hold to the note
+                if te.event.fermata:
+                    consolidated[-1].event.fermata = True
+                # Transfer dynamic from hold to the note (if not already set)
+                if te.event.dynamic and not consolidated[-1].event.dynamic:
+                    consolidated[-1].event.dynamic = te.event.dynamic
             else:
                 consolidated.append(TimedEvent(te.event, te.quarter_length))
         result.append(consolidated)
