@@ -348,14 +348,27 @@ def parse_lyrics_line(line: str) -> tuple[str | None, str | int, list[str]]:
             verse_id = 1
         stripped = stripped[m.end():]
 
+    # Split into syllables with syllabic type for MusicXML hyphenation.
+    # Each syllable is a tuple: (text, syllabic)
+    #   syllabic = "single" (whole word), "begin", "middle", "end"
+    # Example: "A-ma-zing grace" → [("A","begin"), ("ma","middle"), ("zing","end"), ("grace","single")]
     syllables = []
     words = stripped.split()
     for word in words:
         parts = word.split(LYRICS_HYPHEN)
-        for part in parts:
-            # ^ joins two words into one syllable: "no^a" → "no a"
-            part = part.replace(LYRICS_JOIN, " ")
-            syllables.append(part)
+        if len(parts) == 1:
+            # Whole word, no hyphen
+            part = parts[0].replace(LYRICS_JOIN, " ")
+            syllables.append((part, "single"))
+        else:
+            for i, part in enumerate(parts):
+                part = part.replace(LYRICS_JOIN, " ")
+                if i == 0:
+                    syllables.append((part, "begin"))
+                elif i == len(parts) - 1:
+                    syllables.append((part, "end"))
+                else:
+                    syllables.append((part, "middle"))
 
     return voice, verse_id, syllables
 

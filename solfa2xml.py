@@ -1,29 +1,26 @@
 #!/usr/bin/env python3
 """
-Tonic Solfa .txt → MusicXML (.xml) converter
+Tonic Solfa .txt → MusicXML (.xml) → PDF converter
 Output is compatible with MuseScore 4.
 
 Usage:
-    python3 solfa2xml.py <input.txt> [output.xml]
+    python3 solfa2xml.py <input.txt>
+
+Generates .xml and .pdf in the same directory as the input file.
 """
 
 import sys
+import subprocess
 from pathlib import Path
 
 from solfa_parser import parse_file
 from builder import build_score
 
-OUTPUT_DIR = Path("outputs")
 
-def convert(input_path: str, output_path: str | None = None):
-    """Convert a tonic solfa .txt file to MusicXML."""
+def convert(input_path: str):
+    """Convert a tonic solfa .txt file to MusicXML, then to PDF."""
     input_p = Path(input_path)
-
-    if output_path is None:
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = str(OUTPUT_DIR / input_p.with_suffix(".xml").name)
-    else:
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    xml_path = input_p.with_suffix(".xml")
 
     print(f"Parsing: {input_p}")
     parsed = parse_file(str(input_p))
@@ -39,20 +36,39 @@ def convert(input_path: str, output_path: str | None = None):
     print("Building score …")
     score = build_score(parsed)
 
-    print(f"Writing: {output_path}")
-    score.write("musicxml", fp=output_path)
-    print("Done.")
+    print(f"Writing XML: {xml_path}")
+    score.write("musicxml", fp=str(xml_path))
+
+    if not xml_path.exists():
+        print("Error: XML was not created.")
+        sys.exit(1)
+    print("XML done.")
+
+    # Step 2: .xml → .pdf via MuseScore
+    pdf_path = input_p.with_suffix(".pdf")
+    print(f"Generating PDF: {pdf_path}")
+    try:
+        result = subprocess.run(
+            ["mscore", "-o", str(pdf_path), str(xml_path)],
+            stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+        )
+        if result.returncode == 0:
+            print("PDF done.")
+        else:
+            print("Warning: PDF generation failed.")
+    except FileNotFoundError:
+        print("Warning: mscore not found in PATH. Skipping PDF.")
+
+    print("All done.")
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 solfa2xml.py <input.txt> [output.xml]")
-        print("  Converts tonic solfa notation to MusicXML for MuseScore 4.")
+        print("Usage: python3 solfa2xml.py <input.txt>")
         sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else None
-    convert(input_file, output_file)
+    convert(sys.argv[1])
 
 
 if __name__ == "__main__":

@@ -259,7 +259,7 @@ def build_score(parsed: dict) -> stream.Score:
                         m21_measure.append(r)
                         # Rests consume lyrics positions — skip any * in the lyrics
                         for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
-                            if cursor < len(syls) and syls[cursor] == LYRICS_REST_SKIP:
+                            if cursor < len(syls) and syls[cursor][0] == LYRICS_REST_SKIP:
                                 lyrics_cursors[lyric_num] = (syls, cursor + 1)
                         prev_note_obj = None
                         needs_tie_start = False
@@ -295,12 +295,17 @@ def build_score(parsed: dict) -> stream.Score:
                         if not evt.is_melisma:
                             for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
                                 if cursor < len(syls):
-                                    syl = syls[cursor]
-                                    if syl == LYRICS_REST_SKIP:
+                                    syl_text, syl_type = syls[cursor]
+                                    if syl_text == LYRICS_REST_SKIP:
                                         # * = skip, advance cursor but don't add lyric
                                         lyrics_cursors[lyric_num] = (syls, cursor + 1)
                                     else:
-                                        n.addLyric(syl, lyricNumber=lyric_num)
+                                        lyric_obj = note.Lyric(
+                                            text=syl_text,
+                                            number=lyric_num,
+                                            syllabic=syl_type,
+                                        )
+                                        n.lyrics.append(lyric_obj)
                                         lyrics_cursors[lyric_num] = (syls, cursor + 1)
 
                         m21_measure.append(n)
