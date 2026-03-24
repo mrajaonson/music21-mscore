@@ -4,13 +4,14 @@ from datetime import date
 
 from music21 import (
     stream, note, pitch, key, meter, tempo, clef, bar,
-    duration, metadata, tie, repeat, expressions, dynamics,
+    duration, metadata, tie, repeat, expressions, dynamics, chord,
 )
 
 from config import (
-    DEFAULTS, VOICE_BASE_LABELS, VOICE_CONFIG,
+    DEFAULTS, VOICE_BASE_LABELS, VOICE_CONFIG, ALL_PART_LABELS,
     REPEAT_START, REPEAT_END, VOLTA_1_START, FINE, DA_CAPO_SEGNO,
     VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM, TEXT_EXPRESSIONS,
+    LYRICS_REST_SKIP,
 )
 
 from solfa_pitch import solfa_to_pitch, resolve_modulation
@@ -22,7 +23,14 @@ from duration import assign_durations, consolidate_holds
 # ──────────────────────────────────────────────────────────────────────
 
 def _get_voice_base(voice_label: str) -> str:
-    """Extract base voice letter: 'S1' → 'S', 'T2' → 'T'."""
+    """
+    Extract base config key for a voice label.
+    'S1' → 'S', 'T2' → 'T', 'PR' → 'PR', 'PL' → 'PL'.
+    """
+    # Direct match in VOICE_CONFIG (handles PR, PL, OR, OL, OP, S, A, T, B)
+    if voice_label in VOICE_CONFIG:
+        return voice_label
+    # Numbered voice: S1 → S, T2 → T
     if voice_label and voice_label[0] in VOICE_BASE_LABELS:
         return voice_label[0]
     return voice_label
@@ -35,7 +43,7 @@ def _get_voice_config(voice_label: str) -> dict:
 
 
 def _get_voice_full_name(voice_label: str) -> str:
-    """'S' → 'Soprano', 'S1' → 'Soprano 1', 'T2' → 'Tenor 2'."""
+    """'S' → 'Soprano', 'S1' → 'Soprano 1', 'PR' → 'Piano (R)'."""
     cfg = _get_voice_config(voice_label)
     base_name = cfg["name"]
     base = _get_voice_base(voice_label)
@@ -82,21 +90,36 @@ def _make_rest(ql: float) -> note.Rest:
     return r
 
 
+def _make_chord(pitches: list, ql: float) -> chord.Chord:
+    """Create a music21 Chord with the given pitches and quarter length."""
+    c = chord.Chord(pitches)
+    c.duration = duration.Duration(quarterLength=ql)
+    return c
+
+
 def _apply_dynamic(measure: stream.Measure, dyn_str: str):
-    """Append a dynamic, hairpin, or text expression to a measure."""
+    """Append a dynamic, hairpin, or text expression to a measure (placed above staff)."""
     if dyn_str in VALID_DYNAMICS:
-        measure.append(dynamics.Dynamic(dyn_str))
+        d = dynamics.Dynamic(dyn_str)
+        d.placement = "above"
+        measure.append(d)
     elif dyn_str == HAIRPIN_CRESC:
-        measure.append(dynamics.Crescendo())
+        w = dynamics.Crescendo()
+        w.placement = "above"
+        measure.append(w)
     elif dyn_str == HAIRPIN_DIM:
-        measure.append(dynamics.Diminuendo())
+        w = dynamics.Diminuendo()
+        w.placement = "above"
+        measure.append(w)
     elif dyn_str in TEXT_EXPRESSIONS:
         te = expressions.TextExpression(TEXT_EXPRESSIONS[dyn_str])
         te.style.fontStyle = "italic"
+        te.placement = "above"
         measure.append(te)
     else:
         te = expressions.TextExpression(dyn_str)
         te.style.fontStyle = "italic"
+        te.placement = "above"
         measure.append(te)
 
 
@@ -128,6 +151,22 @@ def build_score(parsed: dict) -> stream.Score:
 
     ts_num, ts_den = map(int, time_sig_str.split("/"))
     measure_ql = ts_num * (4.0 / ts_den)
+
+    # ── Pad voices to equal length ──
+    # If some voices have fewer measures (partial blocks), pad with
+    # whole-measure rests so all voices have the same total measures.
+    if voices:
+        from models import NoteEvent
+        max_measures = max(len(m) for m in voices.values())
+        for voice_label in voices:
+            while len(voices[voice_label]) < max_measures:
+                # Create a measure with one rest beat per time sig beat
+                rest_beats = [[NoteEvent(is_rest=True, raw=" ")] for _ in range(ts_num)]
+                voices[voice_label].append({
+                    "markers": [],
+                    "beats": rest_beats,
+                    "modulations": [],
+                })
 
     is_first_part = True
 
@@ -188,9 +227,10 @@ def build_score(parsed: dict) -> stream.Score:
 
             first_event_in_measure = True
 
-            # Whole-measure rest detection
+            # Whole-measure rest detection:
+            # all events are rests, OR no events at all
             all_rests = all(te.event.is_rest for te in events) if events else True
-            if all_rests and events:
+            if all_rests:
                 r = note.Rest()
                 r.duration = duration.Duration(quarterLength=measure_ql)
                 r.fullMeasure = True
@@ -213,11 +253,19 @@ def build_score(parsed: dict) -> stream.Score:
                         if evt.fermata:
                             r.expressions.append(expressions.Fermata())
                         m21_measure.append(r)
+                        # Rests consume lyrics positions — skip any * in the lyrics
+                        for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
+                            if cursor < len(syls) and syls[cursor] == LYRICS_REST_SKIP:
+                                lyrics_cursors[lyric_num] = (syls, cursor + 1)
                         prev_note_obj = None
                         needs_tie_start = False
                     elif evt.is_hold:
                         if prev_note_obj is not None and first_event_in_measure:
-                            tied_n = _make_note(prev_note_obj.pitch, ql)
+                            # Create tied continuation — note or chord
+                            if isinstance(prev_note_obj, chord.Chord):
+                                tied_n = _make_chord(list(prev_note_obj.pitches), ql)
+                            else:
+                                tied_n = _make_note(prev_note_obj.pitch, ql)
                             prev_note_obj.tie = tie.Tie("start")
                             tied_n.tie = tie.Tie("stop")
                             if evt.fermata:
@@ -228,8 +276,14 @@ def build_score(parsed: dict) -> stream.Score:
                             m21_measure.append(_make_rest(ql))
                             prev_note_obj = None
                     else:
-                        p = solfa_to_pitch(evt, active_key, voice_octave)
-                        n = _make_note(p, ql)
+                        # Normal note or chord
+                        if evt.is_chord:
+                            pitches = [solfa_to_pitch(cn, active_key, voice_octave)
+                                       for cn in evt.chord_notes]
+                            n = _make_chord(pitches, ql)
+                        else:
+                            p = solfa_to_pitch(evt, active_key, voice_octave)
+                            n = _make_note(p, ql)
 
                         if evt.fermata:
                             n.expressions.append(expressions.Fermata())
@@ -238,8 +292,12 @@ def build_score(parsed: dict) -> stream.Score:
                             for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
                                 if cursor < len(syls):
                                     syl = syls[cursor]
-                                    n.addLyric(syl, lyricNumber=lyric_num)
-                                    lyrics_cursors[lyric_num] = (syls, cursor + 1)
+                                    if syl == LYRICS_REST_SKIP:
+                                        # * = skip, advance cursor but don't add lyric
+                                        lyrics_cursors[lyric_num] = (syls, cursor + 1)
+                                    else:
+                                        n.addLyric(syl, lyricNumber=lyric_num)
+                                        lyrics_cursors[lyric_num] = (syls, cursor + 1)
 
                         m21_measure.append(n)
                         prev_note_obj = n

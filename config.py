@@ -230,6 +230,25 @@ TEXT_EXPRESSIONS = {
 #     S2  |d:d:d:d|      ← Soprano 2
 #     T1  |d:d:d:d|      ← Tenor 1
 #     T2  |s,:s,:s,:s,|  ← Tenor 2
+#
+# PARTIAL BLOCKS:
+#   Not every voice needs to appear in every block. If a voice is absent
+#   from a block, it automatically gets whole-measure rests for those measures.
+#
+#   When a block has fewer than 4 lines, EXPLICIT labels are required
+#   so the parser knows which voice each line belongs to.
+#
+#   Example — only S1 and B have notes in this block:
+#     S1  |d:r:m:f|s:-:-:-|
+#     B   | : : :d|-:r:-: |
+#     1S1  A-ma-zing grace how sweet
+#     1B   Oh the sound
+#   → S2, A, T1, T2 get whole-measure rests for these 2 measures.
+#
+#   Lyrics use voice prefix to target the correct voice:
+#     1S1  → verse 1, Soprano 1
+#     1B   → verse 1, Bass
+#   Without prefix, lyrics go to the last voice in the block.
 
 # Base voice labels (without numbers)
 VOICE_BASE_LABELS = ["S", "A", "T", "B"]
@@ -290,7 +309,59 @@ VOICE_CONFIG = {
         "octave_offset": -1,       # d = C3  (one octave below soprano)
         "range":        ("E2", "D4"),
     },
+    # ── Instrument parts ──
+    # Piano has two staves: right hand (PR) and left hand (PL)
+    "PR": {
+        "name":         "Piano (R)",
+        "instrument":   instrument.Piano,
+        "clef":         "treble",
+        "octave_offset": 0,        # d = C4
+        "range":        ("A0", "C8"),
+    },
+    "PL": {
+        "name":         "Piano (L)",
+        "instrument":   instrument.Piano,
+        "clef":         "bass",
+        "octave_offset": -1,       # d = C3
+        "range":        ("A0", "C8"),
+    },
 }
+
+# All valid voice/part labels for regex matching (sorted longest first)
+ALL_PART_LABELS = sorted(VOICE_CONFIG.keys(), key=len, reverse=True)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 6b. CHORDS & INSTRUMENT PARTS
+# ─────────────────────────────────────────────────────────────────────
+# For keyboard instruments (piano, organ), multiple notes can sound
+# simultaneously. Chords are written with angle brackets < >.
+#
+# CHORD NOTATION:
+#   <d.m.s>     → C-E-G chord (notes separated by dots inside brackets)
+#   <d.m.s>:r   → chord on beat 1, single note on beat 2
+#   <d.f.l>:-   → chord held for 2 beats
+#
+# INSTRUMENT PART LABELS:
+#   PR  → Piano Right hand (treble clef, octave 4)
+#   PL  → Piano Left hand (bass clef, octave 3)
+#
+# Example — SATB + Piano:
+#   S   | : : : :d.d|
+#   A   | : : : :d.d|
+#   T   | : : : : : |
+#   B   | : : : : : |
+#   PR  | :d:<d.f.l>:<d.f.l>:d:d|
+#   PL  |f,:-.-:<d,.f,.l,>:-:f,.f,:<d,.f,.l,>|
+#   1S  Wie der
+#   1A  Wie der
+#
+# Chords in voice parts (rare but possible — double stops, divisi):
+#   S   |<d.m>:r:m:f|   → soprano sings a two-note chord on beat 1
+
+CHORD_OPEN  = "<"
+CHORD_CLOSE = ">"
+CHORD_SEP   = "."    # same as sub-beat separator, but inside < >
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -323,6 +394,13 @@ VOICE_CONFIG = {
 #     RS1      → refrain of Soprano 1
 #     RA       → refrain of Alto
 #
+#   Bare voice label (no verse number — defaults to verse 1):
+#     S        → verse 1 of Soprano
+#     A        → verse 1 of Alto
+#     T        → verse 1 of Tenor
+#     B        → verse 1 of Bass
+#     PR       → verse 1 of Piano Right
+#
 #   When there are no numbered voices (plain SATB), these also work:
 #     1S       → verse 1 of Soprano
 #     2B       → verse 2 of Bass
@@ -333,8 +411,18 @@ VOICE_CONFIG = {
 #   - The underscore _ appears ONLY on the NOTES side (e.g. _r),
 #     meaning that note is a melisma and does NOT consume a new lyric syllable.
 #     The lyrics line has NO underscores — just plain words, spaces, and hyphens.
+#   - An asterisk * in the lyrics line means "skip this note position"
+#     (the note is a rest or silent — no syllable assigned).
+#     Multiple * skip multiple positions. Each * counts as one skip.
 #
-# Example:
+# Example with rests:
+#   notes:   |d:r: :f| : : :d|r:m:f:s|
+#   lyrics:  hel-lo * bye * * * * come back a-gain
+#   → d="hel", r="lo", (rest)=skip, f="bye",
+#     (4 rests)=skip skip skip skip,
+#     d="come", r="back", m="a", f="gain"
+#
+# Example with melisma:
 #   notes:   |d._r:m|f:s|
 #   lyrics:  Wel-come my friend
 #   → d gets "Wel", _r is melisma (still "Wel"), m gets "come",
@@ -345,12 +433,21 @@ VOICE_CONFIG = {
 #   For each note:
 #     - if the note has a _ prefix → melisma, reuse previous syllable, do NOT
 #       advance the lyrics cursor
+#     - if the note is a rest → advance the lyrics cursor (consume *) but
+#       don't assign any text to the score
 #     - otherwise → assign the next syllable from the lyrics and advance cursor
+#     - if the syllable is * → skip (don't assign text), advance cursor
+
+#   - A caret ^ joins two words into one syllable on a single note:
+#     "ra-no^a-n'o-ny" → 4 syllables: "ra", "no a", "n'o", "ny"
+#     The ^ is replaced by a space in the output, so MuseScore displays "no a".
 
 NOTE_MELISMA_PREFIX = "_"  # prefix on a NOTE → melisma, don't consume next lyric
 LYRICS_WORD_SEP     = " "  # space separates words / syllables in the lyrics line
 LYRICS_HYPHEN       = "-"  # splits a word across notes in the lyrics line
+LYRICS_JOIN         = "^"  # joins two words into one syllable on one note
 LYRICS_REFRAIN      = "R"  # line prefix for refrain
+LYRICS_REST_SKIP    = "*"  # skip a note position (rest/silence) in the lyrics
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -482,4 +579,31 @@ B   |d,:d,:d,:d,|d,:-:-:-|
 1S2  A-ma-zing grace how sweet
 2S1  'Twas grace that taught my heart
 RS1  Praise God praise God a-men
+"""
+
+# EXAMPLE 4: Partial blocks — not all voices in every block, per-voice lyrics
+"""
+TITLE Oratorio Excerpt
+KEY F
+TIMESIG 4/4
+
+S   |d:r:m:f|s:-:-:-|
+A   |d:d:d:d|m:-:-:-|
+T   |d:d:d:d|d:-:-:-|
+B   |d:d:d:d|d,:-:-:-|
+1S  Glo-ry to God in the high-est
+1B  Glo-ry to God in the high-est
+
+S   | : : : | : : : |
+B   | : : :d|-:r:-: |
+1B  Oh hear
+
+S   |d:r:m:f|s:-:-:-|
+A   |d:d:d:d|m:-:-:-|
+T   |d:d:d:d|d:-:-:-|
+B   |d:d:d:d|d,:-:-:-|
+1S  And peace on earth
+1A  And peace on earth
+1T  And peace on earth
+1B  And peace on earth
 """

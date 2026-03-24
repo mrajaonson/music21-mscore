@@ -11,10 +11,11 @@ from config import (
     CHROMATIC_SHARP, CHROMATIC_FLAT,
     OCTAVE_UP_CHAR, OCTAVE_DOWN_CHAR,
     BEAT_SEPARATOR, SUBBEAT_SEPARATOR, HOLD, REST_STAR, REST_DOUBLE_STAR,
-    NOTE_MELISMA_PREFIX, LYRICS_HYPHEN,
-    VOICE_BASE_LABELS, DEFAULT_VOICE_ORDER,
+    NOTE_MELISMA_PREFIX, LYRICS_HYPHEN, LYRICS_JOIN,
+    VOICE_BASE_LABELS, DEFAULT_VOICE_ORDER, ALL_PART_LABELS,
     MODULATION_SEPARATOR, REPEAT_START, REPEAT_END, VOLTA_1_START,
     FINE, DA_CAPO_SEGNO, FERMATA,
+    CHORD_OPEN, CHORD_CLOSE,
 )
 
 
@@ -88,6 +89,35 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     if not s and (dyn or has_fermata):
         return NoteEvent(is_rest=True, raw=" ", dynamic=dyn, fermata=has_fermata), s
 
+    # --- chord: <d.m.s> ---
+    if s and s[0] == CHORD_OPEN:
+        close_idx = s.find(CHORD_CLOSE)
+        if close_idx > 0:
+            chord_str = s[1:close_idx]
+            s = s[close_idx + 1:]
+            # Parse each note inside the chord (separated by .)
+            chord_parts = chord_str.split(".")
+            chord_notes = []
+            for cp in chord_parts:
+                cp = cp.strip()
+                if not cp:
+                    continue
+                cn, _ = _parse_single_token(cp)
+                if cn and not cn.is_rest and not cn.is_hold:
+                    chord_notes.append(cn)
+            if chord_notes:
+                # Use first note as the "primary" for the NoteEvent
+                first = chord_notes[0]
+                return NoteEvent(
+                    solfa=first.solfa, semitone=first.semitone,
+                    octave_shift=first.octave_shift,
+                    is_chromatic_sharp=first.is_chromatic_sharp,
+                    is_chromatic_flat=first.is_chromatic_flat,
+                    raw=f"<{chord_str}>",
+                    dynamic=dyn, fermata=has_fermata,
+                    chord_notes=chord_notes,
+                ), s
+
     # --- melisma prefix ---
     is_melisma = False
     if s and s.startswith(NOTE_MELISMA_PREFIX):
@@ -145,6 +175,30 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     return evt, s
 
 
+_CHORD_DOT_PLACEHOLDER = "\x00"  # temp replacement for dots inside < >
+
+
+def _protect_chord_dots(s: str) -> str:
+    """Replace dots inside <> with placeholder so they aren't split as sub-beats."""
+    result = []
+    inside = False
+    for ch in s:
+        if ch == CHORD_OPEN:
+            inside = True
+        elif ch == CHORD_CLOSE:
+            inside = False
+        if ch == SUBBEAT_SEPARATOR and inside:
+            result.append(_CHORD_DOT_PLACEHOLDER)
+        else:
+            result.append(ch)
+    return "".join(result)
+
+
+def _restore_chord_dots(s: str) -> str:
+    """Restore placeholder back to dots."""
+    return s.replace(_CHORD_DOT_PLACEHOLDER, SUBBEAT_SEPARATOR)
+
+
 def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
     """Parse a beat string (between : separators) into NoteEvents."""
     beat_str = beat_str.strip()
@@ -152,11 +206,14 @@ def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
     if not beat_str:
         return [NoteEvent(is_rest=True, raw=" ")]
 
+    # Protect dots inside chord brackets <d.m.s> from being split
+    beat_str = _protect_chord_dots(beat_str)
+
     groups = beat_str.split(SUBBEAT_SEPARATOR)
     events: list[NoteEvent] = []
 
     for group in groups:
-        g = group.strip()
+        g = _restore_chord_dots(group.strip())
         if not g:
             continue
         while g:
@@ -176,7 +233,10 @@ def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
 # ──────────────────────────────────────────────────────────────────────
 
 _STRUCT_CHARS = {REPEAT_START, REPEAT_END, VOLTA_1_START, FINE, DA_CAPO_SEGNO}
-_VOICE_LABEL_RE = re.compile(r'^([SATB]\d*)(?=\s|\t|\|)')
+
+# Build voice label regex from config: matches PR, PL, OR, OL, OP, S, A, T, B, S1, S2, etc.
+_label_alts = "|".join(re.escape(lbl) for lbl in ALL_PART_LABELS)
+_VOICE_LABEL_RE = re.compile(rf'^({_label_alts}|[SATB]\d+)(?=\s|\t|\|)')
 
 
 def _extract_voice_label(line: str) -> tuple[str | None, str]:
@@ -256,8 +316,14 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
 #  LYRICS PARSING
 # ──────────────────────────────────────────────────────────────────────
 
+# Build lyrics voice pattern from all known labels
+_voice_alt = "|".join(re.escape(lbl) for lbl in ALL_PART_LABELS)
 _LYRICS_PREFIX_RE = re.compile(
-    r'^(?:(?P<refrain>R)(?P<rvoice>[SATB]\d*)?|(?P<vnum>\d+)(?P<voice>[SATB]\d*)?)\s+'
+    rf'^(?:'
+    rf'(?P<refrain>R)(?P<rvoice>{_voice_alt})?'   # R or RS1 etc.
+    rf'|(?P<vnum>\d+)(?P<voice>{_voice_alt})?'     # 1 or 1S1 etc.
+    rf'|(?P<bare_voice>{_voice_alt})'               # S or A or PR etc. (no verse)
+    rf')\s+'
 )
 
 
@@ -277,6 +343,9 @@ def parse_lyrics_line(line: str) -> tuple[str | None, str | int, list[str]]:
             verse_id = int(m.group("vnum"))
             if m.group("voice"):
                 voice = m.group("voice")
+        elif m.group("bare_voice"):
+            voice = m.group("bare_voice")
+            verse_id = 1
         stripped = stripped[m.end():]
 
     syllables = []
@@ -284,6 +353,8 @@ def parse_lyrics_line(line: str) -> tuple[str | None, str | int, list[str]]:
     for word in words:
         parts = word.split(LYRICS_HYPHEN)
         for part in parts:
+            # ^ joins two words into one syllable: "no^a" → "no a"
+            part = part.replace(LYRICS_JOIN, " ")
             syllables.append(part)
 
     return voice, verse_id, syllables
