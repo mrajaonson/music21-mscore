@@ -373,38 +373,47 @@ CHORD_SEP   = "."    # same as sub-beat separator, but inside < >
 # PREFIX FORMAT:  <verse><voice>   (optional — omit entirely for a single verse)
 #   The verse identifier comes FIRST, then the voice label.
 #
-#   NO PREFIX (single verse / shared lyrics):
-#     Lyrics with no prefix are attached to the LAST voice that appeared
-#     before the lyrics line. In a standard SATB layout where lyrics come
-#     after all 4 voice lines, this means Bass (the last voice parsed).
+#   NO PREFIX (shared lyrics):
+#     Lyrics with no voice prefix are attached to ALL voices.
+#     Each voice's lyrics cursor skips rests independently, so
+#     lyrics appear under whichever voice has notes at that position.
+#     This ensures lyrics are always visible even when some voices rest.
 #     Example:
 #       |d:r:m:f|      ← S
 #       |d:d:d:d|      ← A
 #       |d:d:d:d|      ← T
 #       |d:d:d:d|      ← B
-#       A ma zing grace   ← attached to B (last voice above)
+#       A ma zing grace   ← appears under all voices
 #
-#   With prefixes (multiple verses / specific voices):
-#     1        → verse 1, last voice before the lyrics line
-#     2        → verse 2, last voice before the lyrics line
+#     When Bass rests but others sing:
+#       |d:r:m:f| ← S has notes   → lyrics appear here
+#       |d:d:d:d| ← A has notes   → lyrics appear here
+#       |d:d:d:d| ← T has notes   → lyrics appear here
+#       | : : : | ← B rests       → lyrics skipped (no notes)
+#
+#   Verse number without voice (also all voices):
+#     1        → verse 1, all voices
+#     2        → verse 2, all voices
+#     R        → refrain, all voices
+#
+#   With voice prefix (specific voice only):
 #     1S1      → verse 1 of Soprano 1
 #     2S1      → verse 2 of Soprano 1
 #     1A       → verse 1 of Alto
-#     3T2      → verse 3 of Tenor 2
-#     R        → refrain, last voice before the lyrics line
-#     RS1      → refrain of Soprano 1
-#     RA       → refrain of Alto
-#
-#   Bare voice label (no verse number — defaults to verse 1):
 #     S        → verse 1 of Soprano
 #     A        → verse 1 of Alto
-#     T        → verse 1 of Tenor
-#     B        → verse 1 of Bass
+#     3T2      → verse 3 of Tenor 2
+#     RS1      → refrain of Soprano 1
+#     RA       → refrain of Alto
 #     PR       → verse 1 of Piano Right
-#
-#   When there are no numbered voices (plain SATB), these also work:
-#     1S       → verse 1 of Soprano
+#     1S       → verse 1 of Soprano (same as S)
 #     2B       → verse 2 of Bass
+#
+# Summary:
+#   no prefix      → all voices (lyrics flow to wherever notes are)
+#   number only    → all voices, that verse number
+#   R              → all voices, refrain
+#   voice label    → that voice only
 #
 # Syllable rules:
 #   - Words are separated by spaces

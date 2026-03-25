@@ -434,12 +434,19 @@ def parse_file(filepath: str) -> dict:
 
             voice, verse_id, syllables = parse_lyrics_line(stripped)
             if voice is None:
-                voice = last_voice_label
-            if voice not in lyrics_data:
-                lyrics_data[voice] = {}
-            if verse_id not in lyrics_data[voice]:
-                lyrics_data[voice][verse_id] = []
-            lyrics_data[voice][verse_id].extend(syllables)
+                # No voice prefix → attach to ALL voices.
+                # Each voice's cursor skips rests independently,
+                # so lyrics appear under whichever voice has notes.
+                targets = list(voice_data.keys())
+            else:
+                targets = [voice]
+
+            for target in targets:
+                if target not in lyrics_data:
+                    lyrics_data[target] = {}
+                if verse_id not in lyrics_data[target]:
+                    lyrics_data[target][verse_id] = []
+                lyrics_data[target][verse_id].extend(syllables)
 
     return {
         "properties": props,
