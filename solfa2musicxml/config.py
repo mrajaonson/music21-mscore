@@ -149,6 +149,19 @@ VALID_KEYS = [
 #   |d._r:m|       → d.r is one beat, but _ before r means r is tied to d
 #                     for lyrics purposes (counts as one syllable)
 #   |*:r:m:f|      → beat 1 is an explicit rest, then r m f
+#   |d:-:-.m:.s|   → d for 2½ beats (beat 1 + hold beat 2 + hold half of beat 3),
+#                     m for ½ beat (second half of beat 3),
+#                     silence for ½ beat (first half of beat 4),
+#                     s for ½ beat (second half of beat 4)
+#
+# STACCATO (short, detached):
+#   A comma BEFORE a note (after the dot separator) means the note
+#   is played short/detached (staccato). The comma is stripped before
+#   parsing the note.
+#     |d.,t,|       → d,(normal) + t,(staccato, octave down)
+#     |m.,r|        → m(normal) + r(staccato)
+#     |s,.,m,|      → s,(normal) + m,(staccato, octave down)
+#   The leading comma only appears after a dot separator.
 
 BARLINE            = "|"
 DOUBLE_BARLINE     = "||"
@@ -157,6 +170,7 @@ SUBBEAT_SEPARATOR  = "."
 HOLD               = "-"
 REST_STAR          = "*"       # explicit 1-beat rest
 REST_DOUBLE_STAR   = "**"      # explicit 2-beat rest
+STACCATO_PREFIX    = ","       # leading comma before note = staccato
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -370,50 +384,44 @@ CHORD_SEP   = "."    # same as sub-beat separator, but inside < >
 # ─────────────────────────────────────────────────────────────────────
 # Lyrics lines follow the note lines.
 #
-# PREFIX FORMAT:  <verse><voice>   (optional — omit entirely for a single verse)
-#   The verse identifier comes FIRST, then the voice label.
+# PREFIX FORMAT:  [verse:]voices  or just text (no prefix)
 #
-#   NO PREFIX (shared lyrics):
-#     Lyrics with no voice prefix are attached to ALL voices.
-#     Each voice's lyrics cursor skips rests independently, so
-#     lyrics appear under whichever voice has notes at that position.
-#     This ensures lyrics are always visible even when some voices rest.
-#     Example:
-#       |d:r:m:f|      ← S
-#       |d:d:d:d|      ← A
-#       |d:d:d:d|      ← T
-#       |d:d:d:d|      ← B
-#       A ma zing grace   ← appears under all voices
+#   NO PREFIX → all voices, verse 1:
+#     A-ma-zing grace how sweet
 #
-#     When Bass rests but others sing:
-#       |d:r:m:f| ← S has notes   → lyrics appear here
-#       |d:d:d:d| ← A has notes   → lyrics appear here
-#       |d:d:d:d| ← T has notes   → lyrics appear here
-#       | : : : | ← B rests       → lyrics skipped (no notes)
+#   VOICE LIST → verse 1, those voices only:
+#     SATB A-ma-zing grace how sweet      → S, A, T, B
+#     SA A-ma-zing grace how sweet        → S, A only
+#     S1S2T A-ma-zing grace               → S1, S2, T
+#     B Oh the sound                      → B only
 #
-#   Verse number without voice (also all voices):
-#     1        → verse 1, all voices
-#     2        → verse 2, all voices
-#     R        → refrain, all voices
+#   REFRAIN → all voices:
+#     R Praise God                        → refrain, all voices
 #
-#   With voice prefix (specific voice only):
-#     1S1      → verse 1 of Soprano 1
-#     2S1      → verse 2 of Soprano 1
-#     1A       → verse 1 of Alto
-#     S        → verse 1 of Soprano
-#     A        → verse 1 of Alto
-#     3T2      → verse 3 of Tenor 2
-#     RS1      → refrain of Soprano 1
-#     RA       → refrain of Alto
-#     PR       → verse 1 of Piano Right
-#     1S       → verse 1 of Soprano (same as S)
-#     2B       → verse 2 of Bass
+#   VERSE NUMBER → all voices:
+#     1 A-ma-zing grace                   → verse 1, all voices
+#     2 'Twas grace                       → verse 2, all voices
 #
-# Summary:
-#   no prefix      → all voices (lyrics flow to wherever notes are)
-#   number only    → all voices, that verse number
-#   R              → all voices, refrain
-#   voice label    → that voice only
+#   VERSE + VOICE LIST → that verse, those voices:
+#     1:SATB A-ma-zing grace              → verse 1, S A T B
+#     1:B Oh the sound                    → verse 1, B only
+#     2:SA 'Twas grace                    → verse 2, S and A
+#     R:SA Praise God                     → refrain, S and A
+#     R:TB Praise God from whom           → refrain, T and B
+#
+# MULTIPLE LYRICS LINES:
+#   Syllables accumulate per voice — multiple lines for the same voice
+#   and verse are concatenated:
+#     |d:r:m:f|s:l:t:d'|
+#     |d:d:d:d|m:m:m:m|
+#     |d:d:d:d|d:d:d:d|
+#     |d:d:d:d|d:d:d:d|
+#     SAT A-ma-zing grace how sweet the sound
+#     B Oh the sound how sweet
+#
+# Lyrics cursor advances ONLY on singable notes (not rests, holds, melisma).
+# Extra syllables at the end are silently ignored.
+# Notes beyond the last syllable get no lyrics text.
 #
 # Syllable rules:
 #   - Words are separated by spaces
@@ -424,95 +432,129 @@ CHORD_SEP   = "."    # same as sub-beat separator, but inside < >
 #   - An asterisk * in the lyrics line means "skip this note position"
 #     (the note is a rest or silent — no syllable assigned).
 #     Multiple * skip multiple positions. Each * counts as one skip.
-#
-# Example with rests:
-#   notes:   |d:r: :f| : : :d|r:m:f:s|
-#   lyrics:  hel-lo * bye * * * * come back a-gain
-#   → d="hel", r="lo", (rest)=skip, f="bye",
-#     (4 rests)=skip skip skip skip,
-#     d="come", r="back", m="a", f="gain"
-#
-# Example with melisma:
-#   notes:   |d._r:m|f:s|
-#   lyrics:  Wel-come my friend
-#   → d gets "Wel", _r is melisma (still "Wel"), m gets "come",
-#     f gets "my", s gets "friend"
-#
-# Alignment logic:
-#   Walk through notes and lyrics in parallel.
-#   For each note:
-#     - if the note has a _ prefix → melisma, reuse previous syllable, do NOT
-#       advance the lyrics cursor
-#     - if the note is a rest → advance the lyrics cursor (consume *) but
-#       don't assign any text to the score
-#     - otherwise → assign the next syllable from the lyrics and advance cursor
-#     - if the syllable is * → skip (don't assign text), advance cursor
-
 #   - A caret ^ joins two words into one syllable on a single note:
 #     "ra-no^a-n'o-ny" → 4 syllables: "ra", "no a", "n'o", "ny"
-#     The ^ is replaced by a space in the output, so MuseScore displays "no a".
+#
+# Examples:
+#   notes:   |d:r: :f|s:l:t:d'|
+#   lyrics:  hel-lo * bye how sweet the sound
+#   → d="hel", r="lo", (rest) nothing, f="bye",
+#     s="how", l="sweet", t="the", d'="sound"
+#
+#   notes:   |d._r:m|f:s|
+#   lyrics:  Wel-come my friend
+#   → d="Wel", _r=melisma (no syllable), m="come", f="my", s="friend"
 
 NOTE_MELISMA_PREFIX = "_"  # prefix on a NOTE → melisma, don't consume next lyric
 LYRICS_WORD_SEP     = " "  # space separates words / syllables in the lyrics line
 LYRICS_HYPHEN       = "-"  # splits a word across notes in the lyrics line
 LYRICS_JOIN         = "^"  # joins two words into one syllable on one note
 LYRICS_REFRAIN      = "R"  # line prefix for refrain
-LYRICS_REST_SKIP    = "*"  # skip a note position (rest/silence) in the lyrics
+LYRICS_REST_SKIP    = "*"  # skip a note position in the lyrics
 
 
 # ─────────────────────────────────────────────────────────────────────
 # 8. KEY CHANGES (MODULATION)
 # ─────────────────────────────────────────────────────────────────────
-# Written inline as   old_solfa/new_solfa
-# e.g.  s/d  means "the note that was sol in the old key is now do"
-# This tells us the interval of modulation so we can compute the new key.
+# Written inline as   old_note/new_note
+# Both old_note and new_note can have octave modifiers (' or ,).
+# The octave modifiers don't affect key calculation (only pitch class
+# matters), but they ARE used for the first played note in the new key.
+#
+# FORMAT:
+#   old_note/new_note   where:
+#     old_note = solfa name in the OLD key (with optional octave: ' ,)
+#     new_note = solfa name in the NEW key (with optional octave: ' ,)
+#               AND also the first note played in the new key
 #
 # The converter resolves this by:
-#   1. Finding the MIDI pitch of the old solfa in the old key
-#   2. That pitch becomes the new solfa degree in the new key
+#   1. Finding the pitch class of old_note in the old key
+#   2. That pitch class becomes new_note's degree in the new key
 #   3. Deriving the new key from that relationship
 #
-# Example:  key=C, s/d  → G was sol in C, G is now do → new key = G
-#           key=C, s/t  → G was sol in C, G is now ti → new key = Ab
-#           key=C, s/m  → G was sol in C, G is now mi → new key = Eb
+# EXAMPLES (without octave modifiers):
+#   key=C, s/d   → G was sol in C, G is now do → new key = G
+#   key=C, s/t   → G was sol in C, G is now ti → new key = Ab
+#   key=C, s/m   → G was sol in C, G is now mi → new key = Eb
+#
+# EXAMPLES (with octave modifiers):
+#   key=Db, r/s,   → Eb(r in Db) is now sol → new key = Ab
+#                     s, is also the first note played (Eb3)
+#   key=Db, l,/r,  → Bb(l in Db) is now re → new key = Ab
+#                     r, is also the first note played (Bb3)
+#   key=Ab, d/s    → Ab(d in Ab) is now sol → new key = Db
+#                     s is also the first note played (Ab4)
+#   key=Db, fi/t,  → G(fi in Db) is now ti → new key = Ab
+#                     t, is also the first note played (G3)
+#
+# INLINE USAGE:
+#   |d:r:m|r/s,.s,:t,:l,|   → modulate at beat 1 of m2, play s, then t, l,
+#   |d:r:m|l,/r,.r,:s,:fi,| → same key change, different voice's perspective
 
 MODULATION_SEPARATOR = "/"
 
 
 # ─────────────────────────────────────────────────────────────────────
-# 9. REPEATS, JUMPS & STRUCTURAL MARKERS
+# 9. NAVIGATION MARKERS (repeats, jumps, codas, segnos)
 # ─────────────────────────────────────────────────────────────────────
-# [    → segno / repeat-start marker
-# ]    → repeat-end: go back to [ (or to the beginning if no [)
-# {    → marks the start of a first ending (volta 1)
-#        when the repeat is taken, skip from { to after ] (volta 2)
-# F    → Fine (end point for Da Capo / Da Segno)
-# D    → Da Capo (go to beginning) or Da Segno (go to [), stop at F
+# All navigation markers are written in parentheses, inline before a note,
+# just like dynamics and fermata.
 #
-# Patterns:
-#   section1[section2]section3
-#       → play section1, section2, section2 again, section3
+# MARKERS:
+#   (DC)   → D.C. (Da Capo — repeat from the beginning)
+#   (DCF)  → D.C. al Fine (repeat from beginning, stop at Fine)
+#   (DCC)  → D.C. al Coda (repeat from beginning, jump to Coda at To Coda)
+#   (DS)   → D.S. (Dal Segno — repeat from Segno)
+#   (DSF)  → D.S. al Fine (repeat from Segno, stop at Fine)
+#   (DSC)  → D.S. al Coda (repeat from Segno, jump to Coda at To Coda)
+#   (F)    → Fine (end point)
+#   (TC)   → To Coda (jump to Coda sign)
+#   (C)    → Coda (the coda section starts here, with coda sign)
+#   (S)    → Segno (the segno sign, jump target for D.S.)
 #
-#   section1]section2
-#       → play section1, section1 again, section2
+# USAGE (inline, before a note):
+#   | d : r : (F)m : f |          → Fine on m
+#   | d : r : m : (DC)f |         → D.C. on f
+#   | d : r : m : (DS)f |         → D.S. on f
+#   | (S)d : r : m : f |          → Segno on d
+#   | d : r : (TC)m : f |         → To Coda on m
+#   | (C)d : r : m : f |          → Coda section starts on d
+#   | d : r : m : (DCF)f |        → D.C. al Fine on f
+#   | d : r : m : (DSF)f |        → D.S. al Fine on f
 #
-#   section1[section2{ending1]ending2
-#       → play section1, section2, ending1, section2, ending2
+# Can combine with dynamics and fermata:
+#   | (^)(F)(p)d : r : m |        → fermata + Fine + piano on d
 #
-#   section1{ending1]ending2
-#       → play section1, ending1, section1, ending2
+# COMMON PATTERNS:
 #
-#   section1 F section2 D
-#       → play section1, section2, then jump to start, stop at F (DC al Fine)
+#   D.C. al Fine:
+#     | (S)d:r:m:f | d:r:(F)m:f | d:r:m:(DCF)f |
+#     → play all, at DCF jump to start, stop at F
 #
-#   section1 [ section2 F section3 D
-#       → play section1, section2, section3, then jump to [, stop at F (DS al Fine)
+#   D.S. al Fine:
+#     | d:r:m:f | (S)d:r:m:f | d:r:(F)m:f | d:r:m:(DSF)f |
+#     → play all, at DSF jump to S, stop at F
+#
+#   D.C. al Coda:
+#     | d:r:(TC)m:f | d:r:m:(DCC)f | (C)d:r:m:f |
+#     → play m1-m2, at DCC jump to start, at TC jump to C
+#
+#   D.S. al Coda:
+#     | d:r:m:f | (S)d:r:(TC)m:f | d:r:m:(DSC)f | (C)d:r:m:f |
+#     → play all, at DSC jump to S, at TC jump to C
 
-REPEAT_START   = "["    # segno / repeat start
-REPEAT_END     = "]"    # repeat end (go back to [ or beginning)
-VOLTA_1_START  = "{"    # first ending begins here
-FINE           = "F"    # Fine marker
-DA_CAPO_SEGNO  = "D"    # Da Capo or Da Segno jump
+NAVIGATION_MARKERS = {
+    "DC":  "D.C.",
+    "DCF": "D.C. al Fine",
+    "DCC": "D.C. al Coda",
+    "DS":  "D.S.",
+    "DSF": "D.S. al Fine",
+    "DSC": "D.S. al Coda",
+    "F":   "Fine",
+    "TC":  "To Coda",
+    "C":   "Coda",
+    "S":   "Segno",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────

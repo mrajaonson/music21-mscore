@@ -5,6 +5,7 @@ music21 + musescore
 
 * https://music21.org/music21docs/
 * https://musescore.org/fr
+* https://www.musicxml.com/
 
 ## Requirements
 
@@ -29,6 +30,6 @@ python3 -m music21.configure
 ## Use
 
 ```shell
-python3 solfa2xml.py sample.txt
+python3 solfa2musicxml/main.py sample.txt
 mscore -o sample.pdf sample.xml 2>/dev/null
 ```

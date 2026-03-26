@@ -4,7 +4,7 @@ Tonic Solfa .txt → MusicXML (.xml) → PDF converter
 Output is compatible with MuseScore 4.
 
 Usage:
-    python3 solfa2xml.py <input.txt>
+    python3 main.py.py <input.txt>
 
 Generates .xml and .pdf in the same directory as the input file.
 """
@@ -65,7 +65,7 @@ def convert(input_path: str):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 solfa2xml.py <input.txt>")
+        print("Usage: python3 main.py.py <input.txt>")
         sys.exit(1)
 
     convert(sys.argv[1])

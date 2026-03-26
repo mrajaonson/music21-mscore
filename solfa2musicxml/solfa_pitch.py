@@ -35,6 +35,12 @@ def solfa_to_pitch(evt: NoteEvent, current_key: str, base_octave: int) -> pitch.
             idx = degree_map[evt.semitone]
             if idx < len(scale_pitches):
                 p.name = scale_pitches[idx]
+                # music21 may shift octave after name change — fix it
+                while abs(p.midi - midi_val) > 6:
+                    if p.midi > midi_val:
+                        p.octave -= 1
+                    else:
+                        p.octave += 1
 
     elif evt.is_chromatic_sharp:
         base_solfa = evt.solfa[0]
@@ -47,6 +53,11 @@ def solfa_to_pitch(evt: NoteEvent, current_key: str, base_octave: int) -> pitch.
                 accidental_count = raised.accidental.alter if raised.accidental else 0
                 p.name = base_name
                 p.accidental = pitch.Accidental(accidental_count + 1)
+                while abs(p.midi - midi_val) > 6:
+                    if p.midi > midi_val:
+                        p.octave -= 1
+                    else:
+                        p.octave += 1
 
     elif evt.is_chromatic_flat:
         _flat_base = {"ra": "r", "ma": "m", "sa": "s", "la": "l", "ta": "t"}
@@ -59,13 +70,20 @@ def solfa_to_pitch(evt: NoteEvent, current_key: str, base_octave: int) -> pitch.
                 p.name = base_name
                 accidental_count = p.accidental.alter if p.accidental else 0
                 p.accidental = pitch.Accidental(accidental_count - 1)
+                while abs(p.midi - midi_val) > 6:
+                    if p.midi > midi_val:
+                        p.octave -= 1
+                    else:
+                        p.octave += 1
 
     return p
 
 
 def resolve_modulation(mod_str: str, current_key: str, base_octave: int) -> str:
     """
-    Given a modulation string like 's/d', compute the new key.
+    Given a modulation string like 'r/s,' or 'l,/r,', compute the new key.
+    Both old and new notes can have octave modifiers (' ,), which don't
+    affect the key calculation (only pitch class matters).
     Imports _parse_single_token locally to avoid circular imports.
     """
     from solfa_parser import _parse_single_token
@@ -89,10 +107,32 @@ def resolve_modulation(mod_str: str, current_key: str, base_octave: int) -> str:
 
     new_tonic = pitch.Pitch(midi=new_tonic_midi)
 
-    best = current_key
+    # Find matching key, preferring flat/sharp based on current key context.
+    # If current key is flat (Db, Ab, etc.), prefer flat enharmonic (Ab over G#).
+    # If current key is sharp (D#, G#, etc.), prefer sharp enharmonic.
+    current_is_flat = "b" in current_key
+    current_is_sharp = "#" in current_key
+
+    candidates = []
     for kn in VALID_KEYS:
         kp = pitch.Pitch(kn)
         if kp.pitchClass == new_tonic.pitchClass:
-            best = kn
-            break
-    return best
+            candidates.append(kn)
+
+    if not candidates:
+        return current_key
+
+    # Prefer matching accidental style
+    for kn in candidates:
+        if current_is_flat and "b" in kn:
+            return kn
+        if current_is_sharp and "#" in kn:
+            return kn
+        if not current_is_flat and not current_is_sharp and len(kn) == 1:
+            return kn
+
+    # Fallback: prefer flats over sharps (more common in choral music)
+    for kn in candidates:
+        if "b" in kn:
+            return kn
+    return candidates[0]

@@ -5,13 +5,13 @@ from datetime import date
 from music21 import (
     stream, note, pitch, key, meter, tempo, clef, bar,
     duration, metadata, tie, repeat, expressions, dynamics, chord,
+    articulations,
 )
 
 from config import (
     DEFAULTS, VOICE_BASE_LABELS, VOICE_CONFIG, ALL_PART_LABELS,
-    REPEAT_START, REPEAT_END, VOLTA_1_START, FINE, DA_CAPO_SEGNO,
     VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM, TEXT_EXPRESSIONS,
-    LYRICS_REST_SKIP,
+    LYRICS_REST_SKIP, NAVIGATION_MARKERS,
 )
 
 from solfa_pitch import solfa_to_pitch, resolve_modulation
@@ -127,6 +127,59 @@ def _apply_dynamic(measure: stream.Measure, dyn_str: str):
         measure.append(te)
 
 
+def _apply_navigation(measure: stream.Measure, nav_str: str):
+    """Append navigation marker above staff + barline (first voice only)."""
+    # Segno and Coda signs go at the START of the measure (offset 0)
+    if nav_str == "S":
+        measure.insert(0, repeat.Segno())
+        return
+    elif nav_str == "C":
+        measure.insert(0, repeat.Coda())
+        return
+    elif nav_str == "TC":
+        marker = repeat.Coda()
+        marker.text = "To Coda"
+        # Place at last note offset
+        last_offset = 0
+        for el in measure.notesAndRests:
+            if el.offset >= last_offset:
+                last_offset = el.offset
+        measure.insert(last_offset, marker)
+        return
+
+    # All others go above the last note (left of barline)
+    display = NAVIGATION_MARKERS.get(nav_str, nav_str)
+    te = expressions.TextExpression(display)
+    te.placement = "above"
+    te.style.fontStyle = "bold"
+    te.style.fontSize = 12
+    # Find offset of last note/rest to place text there, not on the barline
+    last_offset = 0
+    for el in measure.notesAndRests:
+        if el.offset >= last_offset:
+            last_offset = el.offset
+    measure.insert(last_offset, te)
+    # DC, DCF, DCC → repeat end barline (double bar with dots)
+    if nav_str in ("DC", "DCF", "DCC"):
+        measure.rightBarline = bar.Repeat(direction="end")
+    # DS, DSF, DSC → double barline (no dots)
+    elif nav_str in ("DS", "DSF", "DSC"):
+        measure.rightBarline = bar.Barline("double")
+    # F (Fine) → final barline (thin + thick)
+    elif nav_str == "F":
+        measure.rightBarline = bar.Barline("final")
+
+
+def _apply_navigation_barline_only(measure: stream.Measure, nav_str: str):
+    """Apply only the barline (no text) for non-first voices."""
+    if nav_str in ("DC", "DCF", "DCC"):
+        measure.rightBarline = bar.Repeat(direction="end")
+    elif nav_str in ("DS", "DSF", "DSC"):
+        measure.rightBarline = bar.Barline("double")
+    elif nav_str == "F":
+        measure.rightBarline = bar.Barline("final")
+
+
 # ──────────────────────────────────────────────────────────────────────
 #  SCORE BUILDING
 # ──────────────────────────────────────────────────────────────────────
@@ -146,6 +199,7 @@ def build_score(parsed: dict) -> stream.Score:
     if props.get("AUTHOR"):
         md.lyricist = props["AUTHOR"]
     md.date = date.today().isoformat()
+    md.copyright = f"Generated on {date.today().strftime('%Y-%m-%d')}"
     score.metadata = md
 
     time_sig_str = props.get("TIMESIG", DEFAULTS["TIMESIG"])
@@ -167,12 +221,13 @@ def build_score(parsed: dict) -> stream.Score:
                 # Create a measure with one rest beat per time sig beat
                 rest_beats = [[NoteEvent(is_rest=True, raw=" ")] for _ in range(ts_num)]
                 voices[voice_label].append({
-                    "markers": [],
                     "beats": rest_beats,
                     "modulations": [],
                 })
 
     is_first_part = True
+    nav_markers: dict[int, str] = {}  # measure_index → nav_str (collected from first voice)
+    key_changes: dict[int, str] = {}  # measure_index → new_key (collected from first voice)
 
     # ── Build each voice part ──
     for voice_label, measures_raw in voices.items():
@@ -192,13 +247,13 @@ def build_score(parsed: dict) -> stream.Score:
         timed = assign_durations(measures_raw, time_sig_str)
         timed = consolidate_holds(timed)
 
-        # Lyrics cursors
+        # Lyrics cursors — attach all lyrics, cursor advances on singable notes only
         voice_lyrics = lyrics_data.get(voice_label, {})
         sorted_verses = sorted(
             ((vid, syls) for vid, syls in voice_lyrics.items()),
             key=lambda x: (isinstance(x[0], str), x[0])
         )
-        lyrics_cursors: dict[int, tuple[list[str], int]] = {}
+        lyrics_cursors: dict[int, tuple[list, int]] = {}
         for lyric_num, (vid, syls) in enumerate(sorted_verses, start=1):
             lyrics_cursors[lyric_num] = (syls, 0)
 
@@ -215,21 +270,28 @@ def build_score(parsed: dict) -> stream.Score:
                 m21_measure.insert(0, tempo.MetronomeMark(
                     referent=beat_dur, number=bpm))
 
-            markers = measures_raw[m_idx].get("markers", []) if m_idx < len(measures_raw) else []
+            # Key changes: each voice resolves its own modulations.
+            # First voice also stores key changes for voices without modulations.
             modulations = measures_raw[m_idx].get("modulations", []) if m_idx < len(measures_raw) else []
 
-            for mod in modulations:
-                new_key = resolve_modulation(mod, active_key, base_octave)
-                if new_key != active_key:
-                    active_key = new_key
+            if modulations:
+                for mod in modulations:
+                    new_key = resolve_modulation(mod, active_key, base_octave)
+                    if new_key != active_key:
+                        active_key = new_key
+                        m21_measure.append(key.Key(active_key))
+                        if is_first_part:
+                            key_changes[m_idx] = active_key
+            elif m_idx in key_changes:
+                # No modulation in this voice but first voice changed key here
+                if active_key != key_changes[m_idx]:
+                    active_key = key_changes[m_idx]
                     m21_measure.append(key.Key(active_key))
 
-            if REPEAT_START in markers:
-                m21_measure.leftBarline = bar.Repeat(direction="start")
-            if VOLTA_1_START in markers:
-                pass
-
             first_event_in_measure = True
+
+            # Navigation: read from measure level (parser extracted it from events)
+            measure_nav = measures_raw[m_idx].get("navigation") if m_idx < len(measures_raw) else None
 
             # Whole-measure rest detection:
             # all events are rests, OR no events at all
@@ -241,7 +303,6 @@ def build_score(parsed: dict) -> stream.Score:
                 for te in events:
                     if te.event.dynamic:
                         _apply_dynamic(m21_measure, te.event.dynamic)
-                        break
                 m21_measure.append(r)
                 prev_note_obj = None
             else:
@@ -257,7 +318,7 @@ def build_score(parsed: dict) -> stream.Score:
                         if evt.fermata:
                             r.expressions.append(expressions.Fermata())
                         m21_measure.append(r)
-                        # Rests consume lyrics positions — skip any * in the lyrics
+                        # Rests only skip * markers in lyrics
                         for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
                             if cursor < len(syls) and syls[cursor][0] == LYRICS_REST_SKIP:
                                 lyrics_cursors[lyric_num] = (syls, cursor + 1)
@@ -292,6 +353,9 @@ def build_score(parsed: dict) -> stream.Score:
                         if evt.fermata:
                             n.expressions.append(expressions.Fermata())
 
+                        if evt.is_staccato:
+                            n.articulations.append(articulations.Staccato())
+
                         if not evt.is_melisma:
                             for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
                                 if cursor < len(syls):
@@ -313,16 +377,12 @@ def build_score(parsed: dict) -> stream.Score:
 
                     first_event_in_measure = False
 
-            if REPEAT_END in markers:
-                m21_measure.rightBarline = bar.Repeat(direction="end")
-            if FINE in markers:
-                m21_measure.append(expressions.TextExpression("Fine"))
-            if DA_CAPO_SEGNO in markers:
-                if REPEAT_START in [mk for mm in measures_raw[:m_idx]
-                                     for mk in mm.get("markers", [])]:
-                    m21_measure.append(repeat.DalSegno())
-                else:
-                    m21_measure.append(repeat.DaCapo())
+            # Apply navigation after all notes/rests are in the measure
+            if measure_nav and is_first_part:
+                nav_markers[m_idx] = measure_nav
+                _apply_navigation(m21_measure, measure_nav)
+            elif not is_first_part and m_idx in nav_markers:
+                _apply_navigation_barline_only(m21_measure, nav_markers[m_idx])
 
             part.append(m21_measure)
 
