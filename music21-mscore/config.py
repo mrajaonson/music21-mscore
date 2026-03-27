@@ -6,6 +6,17 @@ This file defines every symbol, mapping, and default used by the converter.
 Import it from the main script so all magic strings live in one place.
 """
 
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# Register FreeSerif font for musical symbols (Coda, Segno)
+try:
+    pdfmetrics.registerFont(TTFont('FreeSerif', '/Library/Fonts/FreeSerif.ttf'))
+    MUSIC_SYMBOL_FONT = 'FreeSerif'
+except:
+    MUSIC_SYMBOL_FONT = 'Helvetica'  # Fallback
+
+
 # ─────────────────────────────────────────────────────────────────────
 # 1. FILE-LEVEL PROPERTIES (parsed from header lines)
 # ─────────────────────────────────────────────────────────────────────
@@ -507,41 +518,46 @@ MODULATION_SEPARATOR = "/"
 #   (DS)   → D.S. (Dal Segno — repeat from Segno)
 #   (DSF)  → D.S. al Fine (repeat from Segno, stop at Fine)
 #   (DSC)  → D.S. al Coda (repeat from Segno, jump to Coda at To Coda)
-#   (F)    → Fine (end point)
+#   (FINE)    → Fine (end point)
 #   (TC)   → To Coda (jump to Coda sign)
-#   (C)    → Coda (the coda section starts here, with coda sign)
-#   (S)    → Segno (the segno sign, jump target for D.S.)
+#   (CODA)    → Coda (the coda section starts here, with coda sign)
+#   (SEGNO)    → Segno (the segno sign, jump target for D.S.)
 #
 # USAGE (inline, before a note):
-#   | d : r : (F)m : f |          → Fine on m
+#   | d : r : (FINE)m : f |          → Fine on m
 #   | d : r : m : (DC)f |         → D.C. on f
 #   | d : r : m : (DS)f |         → D.S. on f
-#   | (S)d : r : m : f |          → Segno on d
+#   | (SEGNO)d : r : m : f |          → Segno on d
 #   | d : r : (TC)m : f |         → To Coda on m
-#   | (C)d : r : m : f |          → Coda section starts on d
+#   | (CODA)d : r : m : f |          → Coda section starts on d
 #   | d : r : m : (DCF)f |        → D.C. al Fine on f
 #   | d : r : m : (DSF)f |        → D.S. al Fine on f
 #
 # Can combine with dynamics and fermata:
-#   | (^)(F)(p)d : r : m |        → fermata + Fine + piano on d
+#   | (^)(FINE)(p)d : r : m |        → fermata + Fine + piano on d
 #
 # COMMON PATTERNS:
 #
 #   D.C. al Fine:
-#     | (S)d:r:m:f | d:r:(F)m:f | d:r:m:(DCF)f |
-#     → play all, at DCF jump to start, stop at F
+#     | (SEGNO)d:r:m:f | d:r:(FINE)m:f | d:r:m:(DCF)f |
+#     → play all, at DCF jump to start, stop at FINE
 #
 #   D.S. al Fine:
-#     | d:r:m:f | (S)d:r:m:f | d:r:(F)m:f | d:r:m:(DSF)f |
-#     → play all, at DSF jump to S, stop at F
+#     | d:r:m:f | (SEGNO)d:r:m:f | d:r:(FINE)m:f | d:r:m:(DSF)f |
+#     → play all, at DSF jump to SEGNO, stop at FINE
 #
 #   D.C. al Coda:
-#     | d:r:(TC)m:f | d:r:m:(DCC)f | (C)d:r:m:f |
-#     → play m1-m2, at DCC jump to start, at TC jump to C
+#     | d:r:(TC)m:f | d:r:m:(DCC)f | (CODA)d:r:m:f |
+#     → play m1-m2, at DCC jump to start, at TC jump to CODA
 #
 #   D.S. al Coda:
-#     | d:r:m:f | (S)d:r:(TC)m:f | d:r:m:(DSC)f | (C)d:r:m:f |
-#     → play all, at DSC jump to S, at TC jump to C
+#     | d:r:m:f | (SEGNO)d:r:(TC)m:f | d:r:m:(DSC)f | (CODA)d:r:m:f |
+#     → play all, at DSC jump to SEGNO, at TC jump to CODA
+
+# Musical symbol constants
+CODA_SYMBOL = "\U0001D10C"  # 𝄌
+SEGNO_SYMBOL = "\U0001D10B"  # 𝄋
+FERMATA_SYMBOL = "\U0001D110"  # 𝄐
 
 NAVIGATION_MARKERS = {
     "DC":  "D.C.",
@@ -550,10 +566,10 @@ NAVIGATION_MARKERS = {
     "DS":  "D.S.",
     "DSF": "D.S. al Fine",
     "DSC": "D.S. al Coda",
-    "F":   "Fine",
+    "FINE":   "Fine",
     "TC":  "To Coda",
-    "C":   "Coda",
-    "S":   "Segno",
+    "CODA":   CODA_SYMBOL,
+    "SEGNO":   SEGNO_SYMBOL,
 }
 
 

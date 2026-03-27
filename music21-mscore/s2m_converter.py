@@ -12,9 +12,8 @@ Generates .xml and .pdf in the same directory as the input file.
 import sys
 import subprocess
 from pathlib import Path
-
-from solfa_parser import parse_file
-from builder import build_score
+from s2m_solfa_parser import parse_file
+from s2m_builder import build_score
 
 
 def convert(input_path: str):

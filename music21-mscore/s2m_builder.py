@@ -1,21 +1,17 @@
 """Build a music21 Score from parsed tonic solfa data."""
 
 from datetime import date
-
 from music21 import (
     stream, note, pitch, key, meter, tempo, clef, bar,
     duration, metadata, tie, repeat, expressions, dynamics, chord,
     articulations,
 )
-
 from config import (
-    DEFAULTS, VOICE_BASE_LABELS, VOICE_CONFIG, ALL_PART_LABELS,
-    VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM, TEXT_EXPRESSIONS,
+    DEFAULTS, VOICE_BASE_LABELS, VOICE_CONFIG, VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM, TEXT_EXPRESSIONS,
     LYRICS_REST_SKIP, NAVIGATION_MARKERS,
 )
-
-from solfa_pitch import solfa_to_pitch, resolve_modulation
-from duration import assign_durations, consolidate_holds
+from s2m_solfa_pitch import solfa_to_pitch, resolve_modulation
+from s2m_duration import assign_durations, consolidate_holds
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -130,10 +126,10 @@ def _apply_dynamic(measure: stream.Measure, dyn_str: str):
 def _apply_navigation(measure: stream.Measure, nav_str: str):
     """Append navigation marker above staff + barline (first voice only)."""
     # Segno and Coda signs go at the START of the measure (offset 0)
-    if nav_str == "S":
+    if nav_str == "SEGNO":
         measure.insert(0, repeat.Segno())
         return
-    elif nav_str == "C":
+    elif nav_str == "CODA":
         measure.insert(0, repeat.Coda())
         return
     elif nav_str == "TC":
@@ -165,8 +161,8 @@ def _apply_navigation(measure: stream.Measure, nav_str: str):
     # DS, DSF, DSC → double barline (no dots)
     elif nav_str in ("DS", "DSF", "DSC"):
         measure.rightBarline = bar.Barline("double")
-    # F (Fine) → final barline (thin + thick)
-    elif nav_str == "F":
+    # FINE (Fine) → final barline (thin + thick)
+    elif nav_str == "FINE":
         measure.rightBarline = bar.Barline("final")
 
 
@@ -176,7 +172,7 @@ def _apply_navigation_barline_only(measure: stream.Measure, nav_str: str):
         measure.rightBarline = bar.Repeat(direction="end")
     elif nav_str in ("DS", "DSF", "DSC"):
         measure.rightBarline = bar.Barline("double")
-    elif nav_str == "F":
+    elif nav_str == "FINE":
         measure.rightBarline = bar.Barline("final")
 
 
@@ -214,7 +210,7 @@ def build_score(parsed: dict) -> stream.Score:
     # If some voices have fewer measures (partial blocks), pad with
     # whole-measure rests so all voices have the same total measures.
     if voices:
-        from models import NoteEvent
+        from s2m_models import NoteEvent
         max_measures = max(len(m) for m in voices.values())
         for voice_label in voices:
             while len(voices[voice_label]) < max_measures:

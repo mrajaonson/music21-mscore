@@ -25,7 +25,7 @@ class NoteEvent:
         self.dynamic = dynamic       # e.g. "p", "f", "ff", "<", ">", "cresc"
         self.fermata = fermata       # True if (^) was present
         self.chord_notes = chord_notes  # list of NoteEvent for chord members, or None
-        self.navigation = navigation # e.g. "DC", "F", "S", "TC", "C", "DSF", etc.
+        self.navigation = navigation # e.g. "DC", "FINE", "SEGNO", "TC", "CODA", "DSF", etc.
         self.is_staccato = is_staccato  # True if leading comma = staccato (played short, detached)
 
     @property

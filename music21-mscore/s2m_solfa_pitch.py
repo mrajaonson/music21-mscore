@@ -1,12 +1,9 @@
 """Pitch conversion and key modulation resolution."""
 
 from music21 import pitch, key
-
-from models import NoteEvent
-
+from s2m_models import NoteEvent
 from config import (
-    SOLFA_TO_SEMITONE, CHROMATIC_SHARP, CHROMATIC_FLAT,
-    VALID_KEYS, MODULATION_SEPARATOR,
+    SOLFA_TO_SEMITONE, VALID_KEYS, MODULATION_SEPARATOR,
 )
 
 
@@ -86,7 +83,7 @@ def resolve_modulation(mod_str: str, current_key: str, base_octave: int) -> str:
     affect the key calculation (only pitch class matters).
     Imports _parse_single_token locally to avoid circular imports.
     """
-    from solfa_parser import _parse_single_token
+    from s2m_solfa_parser import _parse_single_token
 
     parts = mod_str.split(MODULATION_SEPARATOR)
     old_solfa_str = parts[0].strip()

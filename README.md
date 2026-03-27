@@ -21,7 +21,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Install system dependencies
-brew install libb2 tesseract poppler
+brew install libb2 tesseract poppler 
+brew install --cask font-freefont
 
 # configure music21
 python3 -m music21.configure
@@ -30,6 +31,5 @@ python3 -m music21.configure
 ## Use
 
 ```shell
-python3 solfa2musicxml/main.py sample.txt
-mscore -o sample.pdf sample.xml 2>/dev/null
+python3 music21-mscore/s2m_converter.py sample.txt
 ```
