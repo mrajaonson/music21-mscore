@@ -1,6 +1,11 @@
 import re
 from typing import List, Dict, Optional, Tuple, Any
-from config import *
+from config import (HEADER_INT_PROPS, HEADER_STRING_PROPS, HEADER_SPECIAL_PROPS, BARLINE, DEFAULT_VOICE_ORDER,
+                    DOUBLE_BARLINE, BEAT_SEPARATOR, SUBBEAT_SEPARATOR, STACCATO_PREFIX, VALID_KEYS, HOLD, REST_STAR,
+                    REST_DOUBLE_STAR, CHORD_OPEN, CHORD_CLOSE, MODULATION_SEPARATOR, NOTE_MELISMA_PREFIX,
+                    SOLFA_TOKENS_SORTED, OCTAVE_UP_CHAR, OCTAVE_DOWN_CHAR, VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM,
+                    FERMATA, NAVIGATION_MARKERS, TEXT_EXPRESSIONS, SEGNO_SYMBOL, CODA_SYMBOL, LYRICS_JOIN,
+                    LYRICS_REST_SKIP, LYRICS_HYPHEN, DEFAULTS)
 from s2p_data_structures import (Song, VoiceLine, Measure, Note, NoteType, Block, LyricLine, Expression, Beat)
 
 class TonicSolfaParser:

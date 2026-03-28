@@ -230,7 +230,6 @@ TEXT_EXPRESSIONS = {
     "dim":   "dim.",
     "rit":   "rit.",
     "accel": "accel.",
-    "Cresc": "Cresc.",
 }
 
 
