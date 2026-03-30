@@ -34,6 +34,10 @@ class TonicSolfaParser:
                 content_lines.append("")
                 continue
 
+            # Skip comment lines
+            if stripped.startswith('#'):
+                continue
+
             # Check if it's a header property
             header_parsed = False
             for prop in HEADER_STRING_PROPS | HEADER_INT_PROPS | HEADER_SPECIAL_PROPS:
@@ -94,6 +98,10 @@ class TonicSolfaParser:
                         if block:
                             self.song.blocks.append(block)
                         current_block_lines = []
+                continue
+
+            # Skip comment lines
+            if stripped.startswith('#'):
                 continue
 
             current_block_lines.append(stripped)
@@ -419,7 +427,7 @@ class TonicSolfaParser:
             # Check for numbered navigation markers (DS1, DS2, S1, S2, DSF1, etc.)
             import re
             # Match patterns like DS1, DS2, S1, S2, DSF1, DSC1, etc.
-            match = re.match(r'^(DS|SEGNO|DSF|DSC|CODA|TC|DC|DCF|DCC|FINE)(\d+)$', content)
+            match = re.match(r'^(DS|DSF|DSC|SEGNO|S|CODA|C|TC|DC|DCF|DCC|FINE)(\d+)$', content)
             if match:
                 base_marker = match.group(1)
                 number = match.group(2)
@@ -443,55 +451,70 @@ class TonicSolfaParser:
             return None
 
         # Patterns to match:
-        # "SAT text..."  - voices only
-        # "1 text..."    - verse number only
-        # "R text..."    - refrain
-        # "1SAT text..." - verse + voices
-        # "1:SAT text..." - verse:voices
-        # "RS text..."   - refrain + voices
-        # "text..."      - no prefix (SATB, verse 1)
+        # "S text..."      - verse 1, soprano
+        # "SA text..."     - verse 1, soprano + alto
+        # "SAT text..."    - verse 1, soprano + alto + tenor
+        # "1SA text..."    - verse 1, soprano + alto
+        # "1S1S2 text..."  - verse 1, soprano 1 + soprano 2
+        # "RSA text..."    - refrain, soprano + alto
+        # "1 text..."      - verse 1, all voices
+        # "R text..."      - refrain, all voices
+        # "text..."        - no prefix (verse 1, all voices)
 
         verse = "1"
         voices = list(available_voices) if available_voices else DEFAULT_VOICE_ORDER[:]
         display_prefix = ""
         text = line
 
-        # Try to match prefixes
-        # Pattern: optional verse/refrain, optional voices, then space
-        match = re.match(r'^(R|\d+)?:?([SATB]\d*(?:[SATB]\d*)*)?(?:\s+|$)(.*)$', line)
+        # Try to match prefix before the first space
+        match = re.match(r'^(\S+)\s+(.*)$', line)
         if match:
-            v_part = match.group(1)
-            voice_part = match.group(2)
-            text_part = match.group(3)
+            prefix = match.group(1)
+            rest = match.group(2)
+            parsed = False
 
-            if v_part or voice_part:
-                if v_part:
-                    verse = v_part
-                    if v_part != "R":
-                        display_prefix = v_part
-                    else:
-                        display_prefix = "R"
+            # Check for verse+voices (e.g. "1SA", "2B", "RS1S2", "1S1S2")
+            # or verse only (e.g. "1", "2") or refrain (e.g. "R")
+            v_part = ""
+            voice_part = ""
+            if prefix.startswith('R'):
+                v_part = 'R'
+                voice_part = prefix[1:]
+            elif prefix[0].isdigit():
+                # Extract leading digits as verse
+                i = 0
+                while i < len(prefix) and prefix[i].isdigit():
+                    i += 1
+                v_part = prefix[:i]
+                voice_part = prefix[i:]
+
+            if v_part:
+                verse = v_part
+                display_prefix = v_part
 
                 if voice_part:
-                    # Parse voice letters
-                    parsed_voices = []
-                    i = 0
-                    while i < len(voice_part):
-                        # Check for voice with number (S1, S2, etc.)
-                        if i + 1 < len(voice_part) and voice_part[i + 1].isdigit():
-                            parsed_voices.append(voice_part[i:i + 2])
-                            i += 2
-                        else:
-                            parsed_voices.append(voice_part[i])
-                            i += 1
-
+                    parsed_voices = self._parse_voice_labels(voice_part)
                     if parsed_voices:
                         voices = parsed_voices
-                        # Only show voice prefix if not all voices
                         if set(parsed_voices) != set(DEFAULT_VOICE_ORDER[:len(available_voices)]):
                             display_prefix += voice_part
 
-                text = text_part
+                text = rest
+                parsed = True
+
+            # Check for voice-only prefix (e.g. "S", "SA", "SAT", "S1S2")
+            if not parsed:
+                parsed_voices = self._parse_voice_labels(prefix)
+                if parsed_voices:
+                    voices = parsed_voices
+                    if set(parsed_voices) != set(DEFAULT_VOICE_ORDER[:len(available_voices)]):
+                        display_prefix = prefix
+                    text = rest
+                    parsed = True
+
+            # If prefix wasn't recognized, treat entire line as lyrics text
+            if not parsed:
+                text = line
 
         # Parse syllables
         syllables = self._parse_syllables(text)
@@ -505,6 +528,25 @@ class TonicSolfaParser:
             syllables=syllables,
             display_prefix=display_prefix
         )
+
+    def _parse_voice_labels(self, voice_str: str) -> List[str]:
+        """Parse concatenated voice labels like 'SA', 'S1S2T' into a list"""
+        labels = []
+        i = 0
+        while i < len(voice_str):
+            if voice_str[i] in 'SATB':
+                if i + 1 < len(voice_str) and voice_str[i + 1].isdigit():
+                    labels.append(voice_str[i:i + 2])
+                    i += 2
+                else:
+                    labels.append(voice_str[i])
+                    i += 1
+            else:
+                break
+        # Only valid if we consumed the entire string
+        if i == len(voice_str) and labels:
+            return labels
+        return []
 
     def _parse_syllables(self, text: str) -> List[str]:
         """Parse lyrics text into syllables"""

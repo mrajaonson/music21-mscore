@@ -11,7 +11,7 @@ from config import (
     STACCATO_PREFIX,
     NOTE_MELISMA_PREFIX, LYRICS_HYPHEN, LYRICS_JOIN,
     DEFAULT_VOICE_ORDER, ALL_PART_LABELS,
-    MODULATION_SEPARATOR, FERMATA, NAVIGATION_MARKERS,
+    MODULATION_SEPARATOR, FERMATA, NAVIGATION_MARKERS, VALID_KEYS, VALID_DYNAMICS, TEXT_EXPRESSIONS,
     CHORD_OPEN, CHORD_CLOSE,
 )
 
@@ -31,6 +31,9 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
 
     for line in lines:
         stripped = line.strip()
+        if stripped.startswith('#'):
+            remaining.append(line)
+            continue
         if not header_done and stripped:
             parts = stripped.split(None, 1)
             keyword = parts[0].upper()
@@ -62,14 +65,27 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
 
 _DYNAMIC_PREFIX_RE = re.compile(r'^\(([^)]+)\)')
 
+# Regex for numbered navigation markers (DS1, SEGNO2, S1, CODA1, etc.)
+# S is a short alias for SEGNO, C for CODA
+_NUMBERED_NAV_RE = re.compile(
+    r'^(DS|DSF|DSC|SEGNO|S|CODA|C|TC|DC|DCF|DCC|FINE)(\d+)$'
+)
+
+
+def _is_navigation_marker(value: str) -> bool:
+    """Check if a paren value is a navigation marker (plain or numbered)."""
+    if value in NAVIGATION_MARKERS:
+        return True
+    return bool(_NUMBERED_NAV_RE.match(value))
+
 
 def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     """Parse one note token from the beginning of *s*."""
     if not s:
         return None, s
 
-    # --- parenthesized prefixes: dynamics, fermata, navigation ---
-    # Can have multiple: (^)(F)(p)d = fermata + Fine + piano on d
+    # --- parenthesized prefixes: dynamics, fermata, navigation, text expressions ---
+    # Can have multiple: (^)(FINE)(p)d = fermata + Fine + piano on d
     dyn = None
     nav = None
     has_fermata = False
@@ -81,10 +97,13 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         s = s[dm.end():]
         if value == FERMATA:
             has_fermata = True
-        elif value in NAVIGATION_MARKERS:
+        elif _is_navigation_marker(value):
             nav = value
-        else:
-            dyn = value  # last non-fermata, non-nav = dynamic
+        elif value in VALID_DYNAMICS:
+            dyn = value
+        elif value in TEXT_EXPRESSIONS:
+            dyn = value  # text expressions (cresc, dim, etc.) treated like dynamics
+        # else: unknown paren content, ignore
 
     if not s and (dyn or has_fermata or nav):
         return NoteEvent(is_rest=True, raw=" ", dynamic=dyn, fermata=has_fermata, navigation=nav), s
@@ -266,28 +285,54 @@ def _split_measures(raw: str) -> list[str]:
     return [m for m in raw.split("|")]
 
 
-def _detect_modulation(beat_str: str) -> tuple[str | None, str]:
+def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
     """
     Check for a modulation marker like r/s, inside a beat.
     The right side token is both the modulation target AND the first note
     to play in the new key.
 
-    Example: "r/s,.t," → modulation "r/s,", remaining "s,.t,"
-             (s, is played as first note in new key, then t,)
-             "d/s:s:s" → modulation "d/s", remaining "s"
+    Before the modulation there can be parenthesized prefixes (dynamics,
+    navigation, fermata, key change).  Only the key change is extracted here;
+    the rest are left for _parse_single_token to handle.
+
+    Format: [(expr)]... [(KEY)]old_note/new_note [remaining_notes]
+    Example: "(f)(CODA)(Ab)r/s,.t,"
+             → key_change="Ab", mod="r/s,", remaining="(f)(CODA)s,.t,"
+
+    Returns: (modulation_str, remaining_beat, key_change)
     """
     if MODULATION_SEPARATOR not in beat_str:
-        return None, beat_str
+        return None, beat_str, None
 
-    slash_idx = beat_str.index(MODULATION_SEPARATOR)
-    left_str = beat_str[:slash_idx].strip()
-    right_str = beat_str[slash_idx + 1:]
+    # Skip over all parenthesized prefixes to find the modulation slash.
+    # Collect non-key parens to re-prepend them to the remaining beat.
+    key_change = None
+    prefix_parens = []  # non-key parens to preserve
+    work_str = beat_str
+    while work_str.startswith('('):
+        close_idx = work_str.find(')')
+        if close_idx < 0:
+            break
+        candidate = work_str[1:close_idx]
+        rest_after = work_str[close_idx + 1:]
+        if candidate in VALID_KEYS and key_change is None:
+            key_change = candidate
+        else:
+            prefix_parens.append(f"({candidate})")
+        work_str = rest_after
+
+    if MODULATION_SEPARATOR not in work_str:
+        return None, beat_str, None
+
+    slash_idx = work_str.index(MODULATION_SEPARATOR)
+    left_str = work_str[:slash_idx].strip()
+    right_str = work_str[slash_idx + 1:]
 
     # Validate left side: strip octave modifiers (' ,) then check for solfa token
     left_bare = left_str.rstrip(OCTAVE_UP_CHAR + OCTAVE_DOWN_CHAR)
     left_valid = any(left_bare == t for t in SOLFA_TOKENS_SORTED)
     if not left_valid:
-        return None, beat_str
+        return None, beat_str, None
 
     # Parse the right side: consume solfa token + octave modifiers
     right_stripped = right_str.lstrip()
@@ -297,7 +342,7 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str]:
             matched_right = tok
             break
     if matched_right is None:
-        return None, beat_str
+        return None, beat_str, None
 
     # Consume octave modifiers (they're part of the modulation target,
     # e.g. s, means "sol octave down" — pitch class is the same but
@@ -310,7 +355,9 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str]:
     remaining = right_stripped  # right token is also the first note to play
 
     mod_str = f"{left_str}/{right_token}"
-    return mod_str, remaining
+    # Re-prepend non-key parens (dynamics, nav, fermata) so _parse_single_token handles them
+    remaining = "".join(prefix_parens) + remaining
+    return mod_str, remaining, key_change
 
 
 def parse_voice_line(line: str) -> tuple[str | None, list]:
@@ -327,10 +374,13 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
         beats_raw = mstr.split(BEAT_SEPARATOR)
         beats = []
         modulations = []
+        key_changes = []
         for b in beats_raw:
-            mod, b_clean = _detect_modulation(b)
+            mod, b_clean, key_change = _detect_modulation(b)
             if mod:
                 modulations.append(mod)
+                if key_change:
+                    key_changes.append(key_change)
             # Parse remaining content as notes (even after a modulation)
             if b_clean.strip():
                 tokens = parse_beat_tokens(b_clean)
@@ -366,6 +416,7 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
         measures.append({
             "beats": cleaned_beats,
             "modulations": modulations,
+            "key_changes": key_changes,
             "navigation": measure_nav,
         })
 
@@ -410,13 +461,11 @@ def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
     Prefix format:
         (none)          → verse 1, all voices
         R               → refrain, all voices
-        SATB            → verse 1, those voices
-        SA              → verse 1, S and A
-        S1S2T           → verse 1, S1 S2 T
-        1:SATB          → verse 1, those voices
-        1:B             → verse 1, B only
-        R:SA            → refrain, S and A
-        R:TB            → refrain, T and B
+        1               → verse 1, all voices
+        1SA             → verse 1, S and A
+        1S1S2           → verse 1, S1 S2
+        RSA             → refrain, S and A
+        RTB             → refrain, T and B
     """
     stripped = line.strip()
     voices = None
@@ -427,41 +476,43 @@ def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
     if space_idx > 0:
         prefix = stripped[:space_idx]
         rest = stripped[space_idx + 1:].strip()
+        parsed = False
 
-        # Check for verse:voices format (e.g. "1:SATB", "R:SA")
-        if ":" in prefix:
-            vpart, vlist = prefix.split(":", 1)
+        # Check for verse+voices (e.g. "1SA", "2B", "RS1S2") or verse/refrain only
+        vpart = ""
+        vlist = ""
+        if prefix.startswith("R"):
+            vpart = "R"
+            vlist = prefix[1:]
+        elif prefix[0].isdigit():
+            i = 0
+            while i < len(prefix) and prefix[i].isdigit():
+                i += 1
+            vpart = prefix[:i]
+            vlist = prefix[i:]
+
+        if vpart:
             if vpart == "R":
                 verse_id = "R"
-            elif vpart.isdigit():
-                verse_id = int(vpart)
             else:
-                # Not a valid prefix, treat entire line as lyrics
-                rest = stripped
-                vlist = ""
+                verse_id = int(vpart)
 
             if vlist:
                 labels = _extract_voice_labels(vlist)
                 if labels:
                     voices = labels
-                    stripped = rest
-                else:
-                    stripped = rest  # verse parsed, no valid voices
-            else:
-                stripped = rest
-
-        # Check for R alone (refrain, all voices)
-        elif prefix == "R":
-            verse_id = "R"
             stripped = rest
+            parsed = True
 
-        # Check for voice labels only (e.g. "SATB", "SA", "S1S2T")
-        else:
+        # Check for voice-only prefix (e.g. "S", "SA", "SAT", "S1S2")
+        if not parsed:
             labels = _extract_voice_labels(prefix)
             if labels:
                 voices = labels
                 stripped = rest
-            # else: not a prefix, treat entire line as lyrics (stripped unchanged)
+                parsed = True
+
+        # If prefix wasn't recognized, treat entire line as lyrics (stripped unchanged)
 
     # Split into syllables with syllabic type for MusicXML hyphenation
     syllables = []
@@ -517,6 +568,10 @@ def parse_file(filepath: str) -> dict:
         if not stripped:
             if prev_was_note_line:
                 prev_was_note_line = False
+            continue
+
+        # Skip comment lines
+        if stripped.startswith('#'):
             continue
 
         if _is_note_line(stripped):

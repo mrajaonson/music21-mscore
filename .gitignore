@@ -210,3 +210,5 @@ __marimo__/
 inputs
 outputs
 **/*.DS_Store
+
+**/.claude

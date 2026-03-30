@@ -273,7 +273,7 @@ TEXT_EXPRESSIONS = {
 #   Lyrics use voice prefix to target the correct voice:
 #     1S1  → verse 1, Soprano 1
 #     1B   → verse 1, Bass
-#   Without prefix, lyrics go to the last voice in the block.
+#   Without prefix, lyrics go to all voices, rendered after the last notes line.
 
 # Base voice labels (without numbers)
 VOICE_BASE_LABELS = ["S", "A", "T", "B"]
@@ -394,16 +394,15 @@ CHORD_SEP   = "."    # same as sub-beat separator, but inside < >
 # ─────────────────────────────────────────────────────────────────────
 # Lyrics lines follow the note lines.
 #
-# PREFIX FORMAT:  [verse:]voices  or just text (no prefix)
+# PREFIX FORMAT:  [verse][voices]  or just text (no prefix)
 #
 #   NO PREFIX → all voices, verse 1:
 #     A-ma-zing grace how sweet
 #
-#   VOICE LIST → verse 1, those voices only:
-#     SATB A-ma-zing grace how sweet      → S, A, T, B
-#     SA A-ma-zing grace how sweet        → S, A only
-#     S1S2T A-ma-zing grace               → S1, S2, T
-#     B Oh the sound                      → B only
+#   VOICES ONLY → verse 1, those voices:
+#     S A-ma-zing grace                   → verse 1, S only
+#     SA A-ma-zing grace                  → verse 1, S and A
+#     SAT A-ma-zing grace                 → verse 1, S, A, and T
 #
 #   REFRAIN → all voices:
 #     R Praise God                        → refrain, all voices
@@ -412,12 +411,14 @@ CHORD_SEP   = "."    # same as sub-beat separator, but inside < >
 #     1 A-ma-zing grace                   → verse 1, all voices
 #     2 'Twas grace                       → verse 2, all voices
 #
-#   VERSE + VOICE LIST → that verse, those voices:
-#     1:SATB A-ma-zing grace              → verse 1, S A T B
-#     1:B Oh the sound                    → verse 1, B only
-#     2:SA 'Twas grace                    → verse 2, S and A
-#     R:SA Praise God                     → refrain, S and A
-#     R:TB Praise God from whom           → refrain, T and B
+#   VERSE + VOICES → that verse, those voices:
+#     1SATB A-ma-zing grace               → verse 1, S A T B
+#     1S A-ma-zing grace                  → verse 1, S only
+#     1B Oh the sound                     → verse 1, B only
+#     2SA 'Twas grace                     → verse 2, S and A
+#     1S1S2 A-ma-zing grace               → verse 1, S1 and S2
+#     RSA Praise God                      → refrain, S and A
+#     RTB Praise God from whom            → refrain, T and B
 #
 # MULTIPLE LYRICS LINES:
 #   Syllables accumulate per voice — multiple lines for the same voice
@@ -426,8 +427,8 @@ CHORD_SEP   = "."    # same as sub-beat separator, but inside < >
 #     |d:d:d:d|m:m:m:m|
 #     |d:d:d:d|d:d:d:d|
 #     |d:d:d:d|d:d:d:d|
-#     SAT A-ma-zing grace how sweet the sound
-#     B Oh the sound how sweet
+#     1SAT A-ma-zing grace how sweet the sound
+#     1B Oh the sound how sweet
 #
 # Lyrics cursor advances ONLY on singable notes (not rests, holds, melisma).
 # Extra syllables at the end are silently ignored.

@@ -295,32 +295,24 @@ class TonicSolfaPDFRenderer:
         # Check if we have all 4 standard SATB voices - if so, don't show labels
         show_voice_labels = not (set(voice_order) == set(DEFAULT_VOICE_ORDER) and len(voice_order) == 4)
 
-        # Calculate column widths
+        # Calculate column widths — use consistent measure width based on measures_per_line
         voice_label_width = 8 * mm if show_voice_labels else 0
         available_width = self.content_width - voice_label_width
-        measure_width = available_width / num_measures
+        measure_width = available_width / self.measures_per_line
 
         # Starting position
         start_x = self.margin_left
         start_y = self.y_position
 
-        # ── Collect ALL above-staff markers ──
-        nav_markers = self._collect_navigation_markers(all_voice_data, voice_order, start_idx, end_idx)
-        fermatas = self._collect_fermatas(
-            all_voice_data, voice_order, start_idx, end_idx,
-            start_x, voice_label_width, measure_width
-        )
-        key_changes = self._collect_key_changes(
+        # ── Collect ALL above-staff markers into a unified list ──
+        above_staff_items = self._collect_all_above_staff_items(
             all_voice_data, voice_order, start_idx, end_idx,
             start_x, voice_label_width, measure_width
         )
 
         # Draw all above-staff markers on the SAME line if any exist
-        if nav_markers or fermatas or key_changes:
-            self._draw_above_staff_markers(
-                nav_markers, fermatas, key_changes,
-                start_x, start_y, voice_label_width, measure_width, start_idx
-            )
+        if above_staff_items:
+            self._draw_above_staff_line(above_staff_items, start_y)
             start_y -= 12  # Single vertical offset for the combined row
 
         # Draw measure numbers above first voice
@@ -337,6 +329,44 @@ class TonicSolfaPDFRenderer:
         # Organize lyrics by their target voice
         lyrics_by_target_voice = self._organize_lyrics_by_target_voice(block_lyrics, start_idx, end_idx, voice_order)
 
+        # Pre-compute total barline height: from top of first voice to bottom of last voice's note row
+        # (including lyrics rows between voices, but NOT the last voice's lyrics)
+        total_barline_height = 0
+        for voice_idx, voice_label in enumerate(voice_order):
+            total_barline_height += self.voice_row_height
+            # Add lyrics height for all voices except the last one
+            if voice_idx < len(voice_order) - 1 and voice_label in lyrics_by_target_voice:
+                num_lyric_lines = len(lyrics_by_target_voice[voice_label])
+                total_barline_height += num_lyric_lines * (self.lyric_row_height + self.lyric_bottom_margin)
+
+        # Draw barlines first (full height from first voice to bottom of last voice's notes)
+        barline_top_y = start_y
+        barline_bottom_y = start_y - total_barline_height
+        self.c.setStrokeColor(colors.black)
+
+        x = start_x + voice_label_width
+        # Left barline
+        self.c.setLineWidth(0.5)
+        self.c.line(x, barline_top_y, x, barline_bottom_y)
+
+        # Barlines after each measure
+        bx = x
+        total_voice_measures = max(len(all_voice_data.get(v, [])) for v in voice_order) if voice_order else 0
+        for m_idx in range(start_idx, end_idx):
+            bx += measure_width
+            is_last_measure = (m_idx == total_voice_measures - 1)
+
+            if is_last_measure:
+                # Double barline at end
+                self.c.setLineWidth(0.5)
+                self.c.line(bx - 2, barline_top_y, bx - 2, barline_bottom_y)
+                self.c.setLineWidth(1.5)
+                self.c.line(bx, barline_top_y, bx, barline_bottom_y)
+                self.c.setLineWidth(0.5)
+            else:
+                self.c.setLineWidth(0.5)
+                self.c.line(bx, barline_top_y, bx, barline_bottom_y)
+
         # Draw each voice with its lyrics underneath
         y = start_y
         for voice_idx, voice_label in enumerate(voice_order):
@@ -347,32 +377,13 @@ class TonicSolfaPDFRenderer:
                 self.c.setFont("Helvetica-Bold", self.note_font_size)
                 self.c.drawString(start_x, y - self.voice_row_height + 3, voice_label)
 
-            # Draw barline at start
+            # Draw measures for this voice (content only, no barlines)
             x = start_x + voice_label_width
-            self.c.setStrokeColor(colors.black)
-            self.c.setLineWidth(0.5)
-            self.c.line(x, y, x, y - self.voice_row_height)
-
-            # Draw measures for this voice
             for m_idx in range(start_idx, end_idx):
                 if m_idx < len(measures):
                     measure = measures[m_idx]
                     self._draw_measure_content(measure, x, y, measure_width, self.voice_row_height)
-
-                # Draw barline after measure
                 x += measure_width
-
-                is_last_measure = (m_idx == len(measures) - 1) or (m_idx == end_idx - 1 and end_idx >= len(measures))
-
-                if is_last_measure and m_idx == len(measures) - 1:
-                    # Double barline at end
-                    self.c.setLineWidth(0.5)
-                    self.c.line(x - 2, y, x - 2, y - self.voice_row_height)
-                    self.c.setLineWidth(1.5)
-                    self.c.line(x, y, x, y - self.voice_row_height)
-                    self.c.setLineWidth(0.5)
-                else:
-                    self.c.line(x, y, x, y - self.voice_row_height)
 
             y -= self.voice_row_height
 
@@ -390,92 +401,132 @@ class TonicSolfaPDFRenderer:
     # Draw above-staff markers (nav + fermata + key changes on ONE line)
     # ─────────────────────────────────────────────────────────────────
 
-    def _draw_above_staff_markers(self, nav_markers: List[Dict], fermatas: List[Dict],
-                                  key_changes: List[Dict],
-                                  start_x: float, start_y: float,
-                                  label_width: float, measure_width: float, start_idx: int):
-        """Draw navigation markers, fermatas, and key changes on the SAME line above the staff.
-        - Fermatas and key changes use center_x for precise note alignment.
-        - Navigation markers with music symbols (Segno/Coda) render the symbol in
-          MUSIC_SYMBOL_FONT and any trailing number suffix in Helvetica-Bold."""
+    def _collect_all_above_staff_items(self, all_voice_data: Dict, voice_order: List[str],
+                                       start_idx: int, end_idx: int,
+                                       start_x: float, label_width: float,
+                                       measure_width: float) -> List[Dict]:
+        """Collect ALL above-staff items (dynamics, hairpins, text expressions, fermatas,
+        navigation markers, key changes) from the first voice, grouped by note position.
+        Each item has 'center_x', 'order' (notation order), and 'texts' (list of display strings)."""
+        if not voice_order:
+            return []
+
+        # Collect items with their center_x and a global ordering index
+        items_by_position = {}  # key: (m_idx, beat_idx, note_idx) -> list of texts in order
+        order_counter = [0]
+
+        def add_item(key, center_x, text):
+            if key not in items_by_position:
+                items_by_position[key] = {'center_x': center_x, 'texts': [], 'order': order_counter[0]}
+            items_by_position[key]['texts'].append(text)
+            order_counter[0] += 1
+
+        # Use first voice for center_x computation, but collect marks from ALL voices
+        first_voice = voice_order[0]
+        first_measures = all_voice_data.get(first_voice, [])
+        seen_texts = set()  # (key, text) to avoid duplicates across voices
+
+        for voice_label in voice_order:
+            measures = all_voice_data.get(voice_label, [])
+
+            for m_idx in range(start_idx, min(end_idx, len(measures))):
+                measure = measures[m_idx]
+                # Use first voice's beat structure for center_x
+                ref_measure = first_measures[m_idx] if m_idx < len(first_measures) else measure
+                num_beats = len(ref_measure.beats)
+
+                for beat_idx, beat in enumerate(measure.beats):
+                    all_notes = beat.all_notes()
+                    ref_beat = ref_measure.beats[beat_idx] if beat_idx < len(ref_measure.beats) else beat
+
+                    for note_idx, note in enumerate(all_notes):
+                        # Compute center_x using first voice's beat for consistent alignment
+                        ref_notes = ref_beat.all_notes()
+                        ref_note = ref_notes[note_idx] if note_idx < len(ref_notes) else note
+                        center_x = self._compute_note_center_x_full(
+                            m_idx, start_idx, beat_idx, note_idx, ref_note,
+                            ref_beat, num_beats, start_x, label_width, measure_width
+                        )
+                        key = (m_idx, beat_idx, note_idx)
+
+                        for expr in note.expressions:
+                            dedup = (key, expr.type, expr.value)
+                            if dedup in seen_texts:
+                                continue
+                            seen_texts.add(dedup)
+
+                            if expr.type == "dynamic":
+                                add_item(key, center_x, expr.value)
+                            elif expr.type == "hairpin":
+                                add_item(key, center_x, expr.value)
+                            elif expr.type == "text":
+                                add_item(key, center_x, expr.value)
+                            elif expr.type == "fermata":
+                                add_item(key, center_x, FERMATA_SYMBOL)
+                            elif expr.type == "navigation":
+                                add_item(key, center_x, expr.value)
+
+                        if note.type == NoteType.MODULATION and note.key_change:
+                            dedup = (key, "key_change", note.key_change)
+                            if dedup not in seen_texts:
+                                seen_texts.add(dedup)
+                                add_item(key, center_x, f"Key: {note.key_change}")
+
+        # Convert to sorted list
+        result = sorted(items_by_position.values(), key=lambda x: x['order'])
+        return result
+
+    def _draw_above_staff_line(self, items: List[Dict], start_y: float):
+        """Draw all above-staff items on ONE line. Each item's texts are joined by spaces
+        and centered over the note's center_x."""
         self.c.setFillColor(colors.black)
         draw_y = start_y + 2
 
-        # ── Navigation markers ──
-        for marker in nav_markers:
-            rel_m = marker['measure'] - start_idx
-            x = start_x + label_width + rel_m * measure_width + marker['position'] * measure_width
-            text = marker['text']
+        for item in items:
+            center_x = item['center_x']
+            texts = item['texts']
 
-            contains_music_symbol = CODA_SYMBOL in text or SEGNO_SYMBOL in text
+            # Build combined display, handling music symbols specially
+            self._draw_combined_above_text(texts, center_x, draw_y)
 
-            if contains_music_symbol:
-                # Split into symbol part and number part for mixed-font rendering
-                # e.g. "𝄋1" → symbol="𝄋", number="1"
-                # e.g. "𝄋"  → symbol="𝄋", number=""
-                i = len(text) - 1
-                while i >= 0 and text[i].isdigit():
-                    i -= 1
-                symbol_part = text[:i + 1]
-                number_suffix = text[i + 1:]
+    def _draw_combined_above_text(self, texts: List[str], center_x: float, draw_y: float):
+        """Draw a list of above-staff text items centered over center_x, separated by spaces.
+        Music symbols (Coda, Segno, Fermata) use MUSIC_SYMBOL_FONT, others use Helvetica-Bold."""
+        # Build segments: list of (text, font_name, font_size)
+        segments = []
+        music_symbols = {CODA_SYMBOL, SEGNO_SYMBOL, FERMATA_SYMBOL}
 
-                # Measure symbol width
-                symbol_font_size = self.small_font_size + 6
-                self.c.setFont(MUSIC_SYMBOL_FONT, symbol_font_size)
-                symbol_width = self.c.stringWidth(symbol_part, MUSIC_SYMBOL_FONT, symbol_font_size)
+        for i, text in enumerate(texts):
+            if i > 0:
+                segments.append((" ", "Helvetica-Bold", self.small_font_size + 1))
 
-                # Measure number width
-                num_font_size = self.small_font_size + 2
-                num_width = 0
+            # Check if text contains music symbols
+            contains_music = any(sym in text for sym in music_symbols)
+            if contains_music:
+                # Split symbol from number suffix
+                idx = len(text) - 1
+                while idx >= 0 and text[idx].isdigit():
+                    idx -= 1
+                symbol_part = text[:idx + 1]
+                number_suffix = text[idx + 1:]
+
+                segments.append((symbol_part, MUSIC_SYMBOL_FONT, self.small_font_size + 6))
                 if number_suffix:
-                    num_width = self.c.stringWidth(number_suffix, "Helvetica-Bold", num_font_size)
-
-                total_width = symbol_width + num_width
-                draw_x = x - total_width / 2
-
-                # Draw symbol
-                self.c.setFont(MUSIC_SYMBOL_FONT, symbol_font_size)
-                self.c.drawString(draw_x, draw_y, symbol_part)
-
-                # Draw number suffix in Helvetica-Bold next to the symbol
-                if number_suffix:
-                    self.c.setFont("Helvetica-Bold", num_font_size)
-                    self.c.drawString(draw_x + symbol_width, draw_y, number_suffix)
+                    segments.append((number_suffix, "Helvetica-Bold", self.small_font_size + 2))
             else:
-                # Text navigation markers (D.S., Fine, D.C. al Fine, etc.)
-                # Also handle trailing number: "D.S. al Fine 1" etc.
-                font_name = "Helvetica-Bold"
-                font_size = self.small_font_size + 1
-                self.c.setFont(font_name, font_size)
-                text_width = self.c.stringWidth(text, font_name, font_size)
-                draw_x = x - text_width / 2
-                self.c.drawString(draw_x, draw_y, text)
+                segments.append((text, "Helvetica-Bold", self.small_font_size + 1))
 
-        # ── Fermatas (centered on note using center_x) ──
-        for fermata in fermatas:
-            center_x = fermata['center_x']
+        # Calculate total width
+        total_width = 0
+        for seg_text, seg_font, seg_size in segments:
+            total_width += self.c.stringWidth(seg_text, seg_font, seg_size)
 
-            font_name = MUSIC_SYMBOL_FONT
-            font_size = self.small_font_size + 6
-
-            self.c.setFont(font_name, font_size)
-            text_width = self.c.stringWidth(FERMATA_SYMBOL, font_name, font_size)
-
-            draw_x = center_x - text_width / 2
-            self.c.drawString(draw_x, draw_y, FERMATA_SYMBOL)
-
-        # ── Key changes (centered on note using center_x) ──
-        for kc in key_changes:
-            center_x = kc['center_x']
-            text = kc['key']
-
-            font_name = "Helvetica-Bold"
-            font_size = self.small_font_size + 2
-            self.c.setFont(font_name, font_size)
-            text_width = self.c.stringWidth(text, font_name, font_size)
-
-            draw_x = center_x - text_width / 2
-            self.c.drawString(draw_x, draw_y, text)
+        # Draw centered
+        draw_x = center_x - total_width / 2
+        for seg_text, seg_font, seg_size in segments:
+            self.c.setFont(seg_font, seg_size)
+            self.c.drawString(draw_x, draw_y, seg_text)
+            draw_x += self.c.stringWidth(seg_text, seg_font, seg_size)
 
     # ─────────────────────────────────────────────────────────────────
     # Lyric organization helpers
@@ -517,133 +568,6 @@ class TonicSolfaPDFRenderer:
     # Collect above-staff markers with precise center_x
     # ─────────────────────────────────────────────────────────────────
 
-    def _collect_key_changes(self, all_voice_data: Dict, voice_order: List[str],
-                             start_idx: int, end_idx: int,
-                             start_x: float, label_width: float,
-                             measure_width: float) -> List[Dict]:
-        """Collect key changes from the first voice with precise center_x for note alignment."""
-        key_changes = []
-        seen = set()
-
-        if not voice_order:
-            return key_changes
-
-        first_voice = voice_order[0]
-        measures = all_voice_data.get(first_voice, [])
-
-        for m_idx in range(start_idx, min(end_idx, len(measures))):
-            measure = measures[m_idx]
-            num_beats = len(measure.beats)
-
-            for beat_idx, beat in enumerate(measure.beats):
-                all_notes = beat.all_notes()
-
-                for note_idx, note in enumerate(all_notes):
-                    if note.type == NoteType.MODULATION and note.key_change:
-                        center_x = self._compute_note_center_x_full(
-                            m_idx, start_idx, beat_idx, note_idx, note,
-                            beat, num_beats, start_x, label_width, measure_width
-                        )
-
-                        key = (m_idx, beat_idx, note_idx)
-                        if key not in seen:
-                            seen.add(key)
-                            key_changes.append({
-                                'measure': m_idx,
-                                'center_x': center_x,
-                                'key': note.key_change
-                            })
-
-        return key_changes
-
-    def _calculate_position_measure(self, note: Note, beat: Beat, beat_idx: int, beat_width_fraction: float):
-        if note in beat.first_half:
-            half_idx = beat.first_half.index(note)
-            half_notes = len(beat.first_half)
-            pos = beat_idx * beat_width_fraction + (
-                    half_idx / half_notes) * beat_width_fraction * 0.5
-        else:
-            half_idx = beat.second_half.index(note) if note in beat.second_half else 0
-            half_notes = len(beat.second_half)
-            pos = beat_idx * beat_width_fraction + 0.5 * beat_width_fraction + (
-                    half_idx / half_notes) * beat_width_fraction * 0.5
-        return pos
-
-    def _collect_fermatas(self, all_voice_data: Dict, voice_order: List[str],
-                          start_idx: int, end_idx: int,
-                          start_x: float, label_width: float,
-                          measure_width: float) -> List[Dict]:
-        """Collect fermatas from the first voice with precise center_x for note alignment.
-        The center_x uses the same note-centering logic as lyric placement."""
-        fermatas = []
-        seen = set()
-
-        if not voice_order:
-            return fermatas
-
-        first_voice = voice_order[0]
-        measures = all_voice_data.get(first_voice, [])
-
-        for m_idx in range(start_idx, min(end_idx, len(measures))):
-            measure = measures[m_idx]
-            num_beats = len(measure.beats)
-
-            for beat_idx, beat in enumerate(measure.beats):
-                all_notes = beat.all_notes()
-
-                for note_idx, note in enumerate(all_notes):
-                    for expr in note.expressions:
-                        if expr.type == "fermata":
-                            center_x = self._compute_note_center_x_full(
-                                m_idx, start_idx, beat_idx, note_idx, note,
-                                beat, num_beats, start_x, label_width, measure_width
-                            )
-
-                            key = (m_idx, beat_idx, note_idx)
-                            if key not in seen:
-                                seen.add(key)
-                                fermatas.append({
-                                    'measure': m_idx,
-                                    'center_x': center_x
-                                })
-
-        return fermatas
-
-    def _collect_navigation_markers(self, all_voice_data: Dict, voice_order: List[str],
-                                    start_idx: int, end_idx: int) -> List[Dict]:
-        """Collect all navigation markers from all voices for the given measure range"""
-        markers = []
-        seen = set()
-
-        for voice_label in voice_order:
-            measures = all_voice_data.get(voice_label, [])
-            for m_idx in range(start_idx, min(end_idx, len(measures))):
-                measure = measures[m_idx]
-                num_beats = len(measure.beats)
-                beat_width_fraction = 1.0 / num_beats if num_beats > 0 else 1.0
-
-                for beat_idx, beat in enumerate(measure.beats):
-                    all_notes = beat.all_notes()
-                    num_notes = len(all_notes)
-
-                    for note_idx, note in enumerate(all_notes):
-                        for expr in note.expressions:
-                            if expr.type == "navigation":
-                                if beat.is_subdivided:
-                                    pos = self._calculate_position_measure(note, beat, beat_idx, beat_width_fraction)
-                                else:
-                                    pos = beat_idx * beat_width_fraction + (note_idx / num_notes) * beat_width_fraction
-
-                                key = (m_idx, round(pos, 3), expr.value)
-                                if key not in seen:
-                                    seen.add(key)
-                                    markers.append({
-                                        'measure': m_idx,
-                                        'position': pos,
-                                        'text': expr.value
-                                    })
-
-        return markers
 
     # ─────────────────────────────────────────────────────────────────
     # Measure and beat content rendering
@@ -672,56 +596,59 @@ class TonicSolfaPDFRenderer:
         text_y = y - height + 3
         underline_y = text_y - 2
 
-        # Collect melisma ranges across beats
-        melisma_ranges = []
-        current_melisma_start = None
-        current_melisma_end = None
+        # Collect per-note positions across all beats for melisma underlines
+        all_note_positions = []  # list of {x, end_x, is_melisma, is_note}
 
         for beat_idx, beat in enumerate(measure.beats):
             beat_x = x + beat_idx * beat_width
 
-            beat_melisma_info = self._draw_beat_content_with_positions(beat, beat_x, y, beat_width, height)
-
-            if beat_melisma_info['has_melisma']:
-                if current_melisma_start is None:
-                    current_melisma_start = beat_melisma_info['start_x']
-                current_melisma_end = beat_melisma_info['end_x']
-            else:
-                if current_melisma_start is not None:
-                    melisma_ranges.append((current_melisma_start, current_melisma_end))
-                    current_melisma_start = None
-                    current_melisma_end = None
+            beat_result = self._draw_beat_content_with_positions(beat, beat_x, y, beat_width, height)
+            all_note_positions.extend(beat_result.get('note_positions', []))
 
             if beat_idx < num_beats - 1:
                 sep_x = beat_x + beat_width
                 self.c.drawCentredString(sep_x, text_y, ":")
 
-        if current_melisma_start is not None:
-            melisma_ranges.append((current_melisma_start, current_melisma_end))
+        # Build melisma underline ranges: include the note before the melisma chain
+        melisma_ranges = []
+        i = 0
+        while i < len(all_note_positions):
+            pos = all_note_positions[i]
+            if pos['is_melisma'] and pos['is_note']:
+                # Find the start: include preceding note
+                start_x_m = pos['x']
+                if i > 0 and all_note_positions[i - 1]['is_note']:
+                    start_x_m = all_note_positions[i - 1]['x']
+                # Extend through consecutive melisma notes
+                end_x_m = pos['end_x']
+                while i < len(all_note_positions) and all_note_positions[i]['is_melisma'] and all_note_positions[i]['is_note']:
+                    end_x_m = all_note_positions[i]['end_x']
+                    i += 1
+                melisma_ranges.append((start_x_m, end_x_m))
+            else:
+                i += 1
 
         for start_x_m, end_x_m in melisma_ranges:
             self._draw_melisma_underline(start_x_m, underline_y, end_x_m - start_x_m)
 
     def _draw_beat_content_with_positions(self, beat: Beat, x: float, y: float,
                                           width: float, height: float) -> Dict:
-        """Draw the content of a single beat and return melisma position info"""
+        """Draw the content of a single beat and return per-note position info"""
         self.c.setFont("Helvetica", self.note_font_size)
 
         text_y = y - height + 3
         above_y = y + 2
 
         result = {
-            'has_melisma': False,
-            'start_x': None,
-            'end_x': None,
+            'note_positions': [],  # list of {x, end_x, is_melisma, is_note}
             'key_changes': []
         }
 
         if beat.is_subdivided:
             half_width = width / 2
 
-            first_text, first_has_melisma, first_mods = self._notes_to_display_text_with_melisma(beat.first_half)
-            second_text, second_has_melisma, second_mods = self._notes_to_display_text_with_melisma(beat.second_half)
+            first_text, first_mods = self._notes_to_display_text(beat.first_half)
+            second_text, second_mods = self._notes_to_display_text(beat.second_half)
 
             first_draw_x = None
             first_text_width = 0
@@ -733,8 +660,10 @@ class TonicSolfaPDFRenderer:
                     if mod.get('key_change'):
                         result['key_changes'].append((first_draw_x, mod['key_change']))
 
+            # Per-note positions for first half
+            self._add_note_positions(beat.first_half, x, half_width, first_draw_x, first_text_width, result)
+
             dot_x = x + half_width - 1
-            dot_width = self.c.stringWidth(".", "Helvetica", self.note_font_size)
             self.c.setFont("Helvetica", self.note_font_size)
             self.c.drawString(dot_x, text_y, ".")
 
@@ -749,20 +678,11 @@ class TonicSolfaPDFRenderer:
                     if mod.get('key_change'):
                         result['key_changes'].append((second_draw_x, mod['key_change']))
 
-            if first_has_melisma or second_has_melisma:
-                result['has_melisma'] = True
-                if first_draw_x is not None:
-                    result['start_x'] = first_draw_x
-                else:
-                    result['start_x'] = dot_x
-                if second_draw_x is not None:
-                    result['end_x'] = second_draw_x + second_text_width
-                elif first_draw_x is not None:
-                    result['end_x'] = first_draw_x + first_text_width
-                else:
-                    result['end_x'] = dot_x + dot_width
+            # Per-note positions for second half
+            self._add_note_positions(beat.second_half, x + half_width, half_width, second_draw_x, second_text_width, result)
+
         else:
-            text, has_melisma, mods = self._notes_to_display_text_with_melisma(beat.notes)
+            text, mods = self._notes_to_display_text(beat.notes)
             if text:
                 text_width = self._calc_text_width_with_mods(text, mods)
                 draw_x = x + (width - text_width) / 2
@@ -772,12 +692,35 @@ class TonicSolfaPDFRenderer:
                     if mod.get('key_change'):
                         result['key_changes'].append((draw_x, mod['key_change']))
 
-                if has_melisma:
-                    result['has_melisma'] = True
-                    result['start_x'] = draw_x
-                    result['end_x'] = draw_x + text_width
+            # Per-note positions
+            draw_x_val = x + (width - self._calc_text_width_with_mods(text, mods)) / 2 if text else x
+            self._add_note_positions(beat.notes, x, width, draw_x_val if text else None, self._calc_text_width_with_mods(text, mods) if text else 0, result)
 
         return result
+
+    def _add_note_positions(self, notes: List[Note], half_x: float, half_width: float,
+                            draw_x: float, text_width: float, result: Dict):
+        """Add per-note position info for melisma underline computation."""
+        if not notes:
+            return
+        num_notes = len(notes)
+        note_width = half_width / num_notes if num_notes > 0 else half_width
+        for i, note in enumerate(notes):
+            is_real_note = note.type in (NoteType.NOTE, NoteType.MODULATION, NoteType.CHORD)
+            # Approximate each note's drawn x range within the half
+            note_x = half_x + i * note_width
+            note_end_x = note_x + note_width
+            # If we have actual draw coordinates, use proportional mapping
+            if draw_x is not None and text_width > 0 and num_notes > 0:
+                per_note_w = text_width / num_notes
+                note_x = draw_x + i * per_note_w
+                note_end_x = note_x + per_note_w
+            result['note_positions'].append({
+                'x': note_x,
+                'end_x': note_end_x,
+                'is_melisma': note.is_melisma,
+                'is_note': is_real_note
+            })
 
     def _calc_text_width_with_mods(self, text: str, modulations: List[Dict]) -> float:
         """Calculate total width of text including modulation superscripts"""
@@ -801,24 +744,13 @@ class TonicSolfaPDFRenderer:
         self.c.setLineWidth(0.5)
         self.c.line(x, y, x + width, y)
 
-    def _notes_to_display_text_with_melisma(self, notes: List[Note]) -> Tuple[str, bool, List[Dict]]:
-        """Convert notes to display text, indicate if any are melisma, and return modulation info"""
+    def _notes_to_display_text(self, notes: List[Note]) -> Tuple[str, List[Dict]]:
+        """Convert notes to display text and return modulation info"""
         parts = []
-        has_melisma = False
         modulations = []
 
         for note in notes:
-            if note.is_melisma:
-                has_melisma = True
-
-            for expr in note.expressions:
-                if expr.type == "dynamic":
-                    parts.append(f"({expr.value})")
-                elif expr.type == "hairpin":
-                    if "cresc" in expr.value.lower():
-                        parts.append("(<)")
-                    else:
-                        parts.append("(>)")
+            # Dynamics, hairpins, text expressions are rendered above staff, not inline
 
             if note.type == NoteType.MODULATION and note.modulation_from:
                 modulations.append({
@@ -829,7 +761,7 @@ class TonicSolfaPDFRenderer:
 
             parts.append(note.display_text())
 
-        return "".join(parts), has_melisma, modulations
+        return "".join(parts), modulations
 
     def _draw_text_with_modulation(self, text: str, modulations: List[Dict],
                                    x: float, y: float, beat_x: float, above_y: float):
