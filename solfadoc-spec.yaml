@@ -1,0 +1,401 @@
+# =============================================================================
+# solfa-spec.yaml — Tonic Solfa Notation Specification
+# =============================================================================
+# Single source of truth for all notation constants.
+# Read at runtime by: Java (SolfaSpec), Python (solfa_spec.py), VSCode (js-yaml)
+# DO NOT duplicate these values in any language-specific config file.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# META
+# -----------------------------------------------------------------------------
+meta:
+  spec_version: "2.0"
+  format: "tonic-solfa"
+  description: "Tonic Solfa notation specification for parser, IDE plugins, and converters"
+
+
+# -----------------------------------------------------------------------------
+# DEFAULTS — file-level properties when not specified in the .solfa header
+# -----------------------------------------------------------------------------
+defaults:
+  TITLE:    "Untitled"
+  AUTHOR:   ""
+  COMPOSER: ""
+  KEY:      "C"
+  TEMPO:    null
+  TIMESIG:  "4/4"
+  METER:    null
+  OCTAVE:   4         # base octave for unmarked notes (middle-C octave)
+  COMMENTS: ""
+
+
+# -----------------------------------------------------------------------------
+# HEADER — .solfa file header block parsing rules
+# -----------------------------------------------------------------------------
+header:
+  # Format: :PROPNAME: value
+  # Unknown property names are silently skipped — not an error.
+  # A line whose first non-whitespace character is '#' is a comment (entire line ignored).
+  # '#' after any content on a line is literal text, NOT a comment.
+  comment_char: "#"
+  prop_prefix: ":"      # property lines start and end the name with ':'
+  prop_suffix: ":"
+
+  # Property names by parse type
+  string_props:  [TITLE, AUTHOR, COMPOSER, KEY, METER, COMMENTS]
+  int_props:     [TEMPO, OCTAVE]
+  special_props: [TIMESIG]   # parsed as "N/D" → two integers
+
+
+# -----------------------------------------------------------------------------
+# NOTES — solfa syllables and semitone offsets from "do"
+# -----------------------------------------------------------------------------
+notes:
+  # Natural (diatonic) notes of the major scale
+  solfa_to_semitone:
+    d:  0   # do
+    r:  2   # re
+    m:  4   # mi
+    f:  5   # fa
+    s:  7   # sol
+    l:  9   # la
+    t:  11  # ti
+
+  # Chromatic — ascending (sharps / raised)
+  # 'e' and 'i' suffixes are FULLY INTERCHANGEABLE — no preference.
+  chromatic_sharp:
+    de: 1   # raised do  (alias: di)
+    di: 1   # raised do  (alias: de)
+    re: 3   # raised re  (alias: ri)
+    ri: 3   # raised re  (alias: re)
+    fe: 6   # raised fa  (alias: fi)
+    fi: 6   # raised fa  (alias: fe)
+    se: 8   # raised sol (alias: si)
+    si: 8   # raised sol (alias: se)
+    le: 10  # raised la  (alias: li)
+    li: 10  # raised la  (alias: le)
+
+  # Chromatic — descending (flats / lowered)
+  # IMPORTANT: 'la' is ALWAYS lowered-la (semitone 8).
+  # It is NEVER the note 'l' followed by octave suffix 'a'.
+  # 'sa' (6) is intentionally enharmonic with 'fe'/'fi' (6): lowered sol = raised fa.
+  chromatic_flat:
+    ra: 1   # lowered re
+    ma: 3   # lowered mi
+    sa: 6   # lowered sol — enharmonic with fe/fi
+    la: 8   # lowered la  — ALWAYS a flat, never l + octave-a
+    ta: 10  # lowered ti
+
+  # Chromatic scale reference (for validation and debugging)
+  chromatic_ascending:  [d, de, r, re, m, f, fe, s, se, l, le, t]
+  chromatic_descending: ["d'", t, ta, l, la, s, sa, f, m, ma, r, ra]
+
+  # Enharmonic equivalents (same semitone, different spelling)
+  enharmonic_pairs:
+    - [fe, fi, sa]    # semitone 6: raised fa = lowered sol
+    - [se, si, la]    # semitone 8: raised sol = lowered la
+    - [le, li, ta]    # semitone 10: raised la = lowered ti
+
+
+# -----------------------------------------------------------------------------
+# OCTAVE — modifiers applied after the solfa token
+# -----------------------------------------------------------------------------
+octave:
+  up_char:   "'"   # apostrophe — +1 octave per character
+  down_char: ","   # comma      — -1 octave per character (trailing only)
+  default:   4     # base octave when no modifier present (middle-C octave)
+
+  # Disambiguation rule:
+  # Trailing ',' immediately after solfa+octave marks (no space) = octave-down.
+  # Leading ',' preceded by a space or separator = staccato prefix.
+  # Authors add a space to disambiguate: | d, ,r : m,, |
+  #   d,  → do octave-down
+  #   ,r  → re staccato
+  #   m,, → mi two octaves down
+
+
+# -----------------------------------------------------------------------------
+# KEYS — valid key signatures
+# -----------------------------------------------------------------------------
+keys:
+  # Major keys only (tonic solfa: do = tonic)
+  valid_keys:
+    - C
+    - D
+    - E
+    - F
+    - G
+    - A
+    - B
+    - C#
+    - D#
+    - F#
+    - G#
+    - A#
+    - Db
+    - Eb
+    - Gb
+    - Ab
+    - Bb
+
+
+# -----------------------------------------------------------------------------
+# RHYTHM — measure structure, separators, rests, holds
+# -----------------------------------------------------------------------------
+rhythm:
+  barline:          "|"    # single barline — separates measures
+  double_barline:   "||"   # double barline — end of piece
+  beat_separator:   ":"    # splits a measure into beats
+  subbeat_separator: "."   # splits a beat into sub-beat subdivisions
+  hold:             "-"    # extends the previous note for that slot
+  rest_explicit:    "*"    # explicit 1-beat rest
+  rest_double:      "**"   # explicit 2-beat rest
+  # empty beat slot (blank between separators) = implicit rest
+
+  # Whole-measure rest rule:
+  # A measure containing ONLY separators and blanks (no notes, no holds)
+  # becomes a single whole-measure rest — applies to ALL time signatures.
+
+  # ---------------------------------------------------------------------------
+  # Soft barline '!' — mid-measure visual separator
+  # ---------------------------------------------------------------------------
+  soft_barline:
+    char: "!"
+    # Renders as a thin '|' courtesy barline in PDF and MusicXML output.
+    # Has NO effect on note durations, beat counts, or measure structure.
+    # Treated as equivalent to ':' during duration parsing.
+    render_as: "thin_barline"
+
+    # Validity rules:
+    # 1. Only allowed when time signature numerator is EVEN AND >= 4
+    #    YES: 4/4, 6/8, 8/8, 12/8, 4/2 ...
+    #    NO:  2/4, 3/4, 2/2, 3/8 ...
+    min_numerator: 4
+    numerator_must_be_even: true
+
+    # 2. Maximum one '!' per measure
+    max_per_measure: 1
+
+    # 3. Must split the measure into two halves of exactly equal duration
+    #    (calculated from actual note/rest/hold values — not just beat count)
+    #    Misplacement is a HARD ERROR — file is rejected.
+    split: "equal_duration"
+    misplacement_policy: "error"
+
+
+# -----------------------------------------------------------------------------
+# STACCATO — leading comma prefix on a note token
+# -----------------------------------------------------------------------------
+staccato:
+  prefix: ","
+  # Valid anywhere before a note token (not only after a dot separator).
+  # Valid before a melisma prefix: ,_d is correct notation.
+  # See octave.disambiguation for ',' vs octave-down resolution.
+
+  # Token parse order for any note slot:
+  # 1. Zero or more inline prefix groups  (...)
+  # 2. Optional modulation key hint       (Key X)
+  # 3. Optional staccato prefix           ,
+  # 4. Optional melisma prefix            _
+  # 5. Solfa syllable — longest match first (2-char before 1-char)
+  # 6. Trailing octave modifiers          ' and/or ,
+  # 7. Optional modulation marker         old_note/new_note
+  melisma_prefix: "_"
+
+
+# -----------------------------------------------------------------------------
+# DYNAMICS — expression marks attached to notes
+# -----------------------------------------------------------------------------
+dynamics:
+  # All written in parentheses inline before a note: (p)d  (ff)r
+  # Multiple prefixes chain freely in any order: (^)(f)d  (cresc)(pp)d
+
+  valid_dynamics: [ppp, pp, p, mp, mf, f, ff, fff, sf, sfz, fp]
+
+  hairpins:
+    crescendo:   "<"   # (< ) — crescendo
+    diminuendo:  ">"   # (> ) — diminuendo
+
+  fermata: "^"         # (^) — fermata over the note
+
+  text_expressions:
+    cresc: "cresc."
+    dim:   "dim."
+    rit:   "rit."
+    accel: "accel."
+
+
+# -----------------------------------------------------------------------------
+# VOICES — parts and their properties
+# -----------------------------------------------------------------------------
+voices:
+  # Base voice labels (without sub-voice numbers)
+  base_labels: [S, A, T, B]
+
+  # Implicit assignment order when no labels are present in a block:
+  #   1 line  → S
+  #   2 lines → S, A
+  #   3 lines → S, A, T
+  #   4 lines → S, A, T, B
+  # STRICT: a block is either FULLY implicit OR FULLY explicit.
+  # Mixing labeled and unlabeled lines in the same block is a HARD ERROR.
+  default_order: [S, A, T, B]
+
+  # Instrument parts — cannot appear in lyrics prefixes (HARD ERROR if they do)
+  instrument_parts: [PR, PL]
+
+  # Voice configuration
+  # Note: instrument_class stores a string name only.
+  # Language-specific loaders map this to the actual instrument class.
+  voice_config:
+    S:
+      name:             "Soprano"
+      instrument_class: "Soprano"
+      clef:             "treble"
+      octave_offset:    0      # d = C4
+      range_low:        "C4"
+      range_high:       "A5"
+
+    A:
+      name:             "Alto"
+      instrument_class: "Alto"
+      clef:             "treble"
+      octave_offset:    0      # d = C4
+      range_low:        "F3"
+      range_high:       "D5"
+
+    T:
+      name:             "Tenor"
+      instrument_class: "Tenor"
+      clef:             "treble8vb"
+      octave_offset:    -1     # d = C3 (one octave below soprano)
+      range_low:        "C3"
+      range_high:       "A4"
+
+    B:
+      name:             "Bass"
+      instrument_class: "Bass"
+      clef:             "bass"
+      octave_offset:    -1     # d = C3
+      range_low:        "E2"
+      range_high:       "D4"
+
+    PR:
+      name:             "Piano (R)"
+      instrument_class: "Piano"
+      clef:             "treble"
+      octave_offset:    0      # d = C4
+      range_low:        "A0"
+      range_high:       "C8"
+
+    PL:
+      name:             "Piano (L)"
+      instrument_class: "Piano"
+      clef:             "bass"
+      octave_offset:    -1     # d = C3
+      range_low:        "A0"
+      range_high:       "C8"
+
+
+# -----------------------------------------------------------------------------
+# CHORDS — simultaneous notes inside angle brackets
+# -----------------------------------------------------------------------------
+chords:
+  open:  "<"
+  close: ">"
+  sep:   " "   # SPACE separates chord members — NOT dot (avoids sub-beat ambiguity)
+  # Example: <d m s> = C-E-G chord
+  # A chord occupies one beat slot and can appear as a sub-beat member: <d m s>.r
+
+
+# -----------------------------------------------------------------------------
+# LYRICS — text assigned to notes
+# -----------------------------------------------------------------------------
+lyrics:
+  # Lyrics lines always follow ALL note lines within a block.
+  # No blank lines between note lines and lyric lines in the same block.
+
+  # Syllable characters
+  word_separator: " "   # space separates words/syllables
+  hyphen:         "-"   # splits a word across notes: A-ma-zing → 3 syllables
+  join:           "^"   # joins two words into one syllable on one note
+  rest_skip:      "*"   # skip one note position (rest or silent note)
+  melisma_prefix: "_"   # on a NOTE: melisma — does not consume a lyric syllable
+
+  # Refrain designator
+  refrain_token: "R"
+
+  # Error policies
+  extra_syllables_policy: "error"   # more syllables than notes → HARD ERROR, reject file
+  instrument_in_prefix_policy: "error"  # PR/PL in lyrics prefix → HARD ERROR
+
+  # Prefix grammar:
+  #   prefix  := (verse?) (voices?)
+  #   verse   := [0-9]+  |  R
+  #   voices  := (voice)*
+  #   voice   := [SATB][0-9]*
+  #
+  # The prefix is the FIRST space-delimited token on the line.
+  # Everything after the first space is the lyrics text.
+  # Prefix order: verse/R always FIRST, then voice labels.
+  #
+  # Defaults when prefix is absent or partial:
+  prefix_defaults:
+    no_prefix:      { verse: 1, voices: "all" }   # "Amazing grace" → verse 1, all voices
+    verse_only:     { voices: "all" }              # "2 'Twas"       → verse 2, all voices
+    refrain_only:   { voices: "all" }              # "R Praise God"  → refrain, all voices
+    voices_only:    { verse: 1 }                   # "SA Amazing"    → verse 1, S+A
+
+
+# -----------------------------------------------------------------------------
+# MODULATION — key changes written inline on voice lines
+# -----------------------------------------------------------------------------
+modulation:
+  separator: "/"          # old_note/new_note
+  key_hint_keyword: "Key" # optional inline hint: (Key Ab) before old/new token
+  scope: "voice"          # modulation marker is per voice line
+  # New key can always be inferred from the old/new solfa relationship.
+  # (Key X) is optional — used when the author wants explicit clarity.
+  # In practice all voices modulate to the same key at the same point.
+
+
+# -----------------------------------------------------------------------------
+# NAVIGATION — repeat markers, jumps, codas, segnos
+# -----------------------------------------------------------------------------
+navigation:
+  # All written in parentheses, inline before a note.
+  # Chainable in any order with dynamics and fermata: (^)(FINE)(p)d
+
+  # Unicode musical symbols
+  coda_symbol:    "\U0001D10C"   # 𝄌
+  segno_symbol:   "\U0001D10B"   # 𝄋
+  fermata_symbol: "\U0001D110"   # 𝄐
+
+  markers:
+    DC:    "D.C."
+    DCF:   "D.C. al Fine"
+    DCC:   "D.C. al Coda"
+    DS:    "D.S."
+    DSF:   "D.S. al Fine"
+    DSC:   "D.S. al Coda"
+    FINE:  "Fine"
+    TC:    "To Coda"
+    CODA:  "\U0001D10C"   # renders as coda symbol 𝄌
+    SEGNO: "\U0001D10B"   # renders as segno symbol 𝄋
+
+
+# -----------------------------------------------------------------------------
+# EXPORT — output format settings
+# -----------------------------------------------------------------------------
+export:
+  musicxml_version: "4.0"     # MusicXML version for MuseScore 4 compatibility
+  export_format:    "musicxml" # music21 export format string
+
+  # PDF font preference for musical symbols (Coda, Segno).
+  # Language-specific loaders resolve the actual font path.
+  music_symbol_font_preference: "FreeSerif"
+  music_symbol_font_fallback:   "Helvetica"
+
+  # Font for notes and lyrics rendering in PDF
+  notation_font: "Times-Roman"

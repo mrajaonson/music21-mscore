@@ -83,6 +83,7 @@ class Measure:
     beats: List[Beat] = field(default_factory=list)
     number: int = 0
     is_empty: bool = False  # whole-measure rest
+    soft_barline_after_beat: int = -1  # beat index after which to draw a thin courtesy barline (-1 = none)
 
     def display_text(self) -> str:
         """Return display text for this measure"""

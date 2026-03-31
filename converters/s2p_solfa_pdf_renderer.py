@@ -2,7 +2,20 @@ from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm, cm
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
-from config import (DEFAULT_VOICE_ORDER, MUSIC_SYMBOL_FONT, FERMATA_SYMBOL, CODA_SYMBOL, SEGNO_SYMBOL, NAVIGATION_MARKERS)
+from solfa_spec import spec
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+def _resolve_music_font() -> str:
+    pref = spec["export"]["music_symbol_font_preference"]
+    fallback = spec["export"]["music_symbol_font_fallback"]
+    try:
+        pdfmetrics.registerFont(TTFont(pref, f'/Library/Fonts/{pref}.ttf'))
+        return pref
+    except Exception:
+        return fallback
+
+MUSIC_SYMBOL_FONT = _resolve_music_font()
 from s2p_data_structures import (Song)
 from datetime import datetime
 from typing import List, Dict, Tuple
@@ -29,6 +42,7 @@ class TonicSolfaPDFRenderer:
         self.content_height = self.page_height - self.margin_top - self.margin_bottom
 
         # Font settings
+        self.notation_font = spec["export"]["notation_font"]
         self.title_font_size = 14
         self.subtitle_font_size = 10
         self.header_font_size = 9
@@ -159,7 +173,7 @@ class TonicSolfaPDFRenderer:
 
         # Determine voice order
         voice_order = []
-        for v in DEFAULT_VOICE_ORDER:
+        for v in spec["voices"]["default_order"]:
             if v in all_voice_data:
                 voice_order.append(v)
         # Add any other voices
@@ -293,7 +307,7 @@ class TonicSolfaPDFRenderer:
         num_measures = end_idx - start_idx
 
         # Check if we have all 4 standard SATB voices - if so, don't show labels
-        show_voice_labels = not (set(voice_order) == set(DEFAULT_VOICE_ORDER) and len(voice_order) == 4)
+        show_voice_labels = not (set(voice_order) == set(spec["voices"]["default_order"]) and len(voice_order) == 4)
 
         # Calculate column widths — use consistent measure width based on measures_per_line
         voice_label_width = 8 * mm if show_voice_labels else 0
@@ -462,7 +476,7 @@ class TonicSolfaPDFRenderer:
                             elif expr.type == "text":
                                 add_item(key, center_x, expr.value)
                             elif expr.type == "fermata":
-                                add_item(key, center_x, FERMATA_SYMBOL)
+                                add_item(key, center_x, spec["navigation"]["fermata_symbol"])
                             elif expr.type == "navigation":
                                 add_item(key, center_x, expr.value)
 
@@ -494,7 +508,7 @@ class TonicSolfaPDFRenderer:
         Music symbols (Coda, Segno, Fermata) use MUSIC_SYMBOL_FONT, others use Helvetica-Bold."""
         # Build segments: list of (text, font_name, font_size)
         segments = []
-        music_symbols = {CODA_SYMBOL, SEGNO_SYMBOL, FERMATA_SYMBOL}
+        music_symbols = {spec["navigation"]["coda_symbol"], spec["navigation"]["segno_symbol"], spec["navigation"]["fermata_symbol"]}
 
         for i, text in enumerate(texts):
             if i > 0:
@@ -579,11 +593,14 @@ class TonicSolfaPDFRenderer:
         if measure.is_empty:
             num_beats = len(measure.beats) if measure.beats else 4
             beat_width = width / num_beats
-            self.c.setFont("Helvetica", self.note_font_size)
+            self.c.setFont(self.notation_font, self.note_font_size)
             text_y = y - height + 3
             for beat_idx in range(num_beats - 1):
                 sep_x = x + (beat_idx + 1) * beat_width
-                self.c.drawCentredString(sep_x, text_y, ":")
+                if measure.soft_barline_after_beat == beat_idx:
+                    self.c.drawCentredString(sep_x, text_y, "|")
+                else:
+                    self.c.drawCentredString(sep_x, text_y, ":")
             return
 
         num_beats = len(measure.beats)
@@ -592,7 +609,7 @@ class TonicSolfaPDFRenderer:
 
         beat_width = width / num_beats
 
-        self.c.setFont("Helvetica", self.note_font_size)
+        self.c.setFont(self.notation_font, self.note_font_size)
         text_y = y - height + 3
         underline_y = text_y - 2
 
@@ -607,7 +624,10 @@ class TonicSolfaPDFRenderer:
 
             if beat_idx < num_beats - 1:
                 sep_x = beat_x + beat_width
-                self.c.drawCentredString(sep_x, text_y, ":")
+                if measure.soft_barline_after_beat == beat_idx:
+                    self.c.drawCentredString(sep_x, text_y, "|")
+                else:
+                    self.c.drawCentredString(sep_x, text_y, ":")
 
         # Build melisma underline ranges: include the note before the melisma chain
         melisma_ranges = []
@@ -634,7 +654,7 @@ class TonicSolfaPDFRenderer:
     def _draw_beat_content_with_positions(self, beat: Beat, x: float, y: float,
                                           width: float, height: float) -> Dict:
         """Draw the content of a single beat and return per-note position info"""
-        self.c.setFont("Helvetica", self.note_font_size)
+        self.c.setFont(self.notation_font, self.note_font_size)
 
         text_y = y - height + 3
         above_y = y + 2
@@ -664,7 +684,7 @@ class TonicSolfaPDFRenderer:
             self._add_note_positions(beat.first_half, x, half_width, first_draw_x, first_text_width, result)
 
             dot_x = x + half_width - 1
-            self.c.setFont("Helvetica", self.note_font_size)
+            self.c.setFont(self.notation_font, self.note_font_size)
             self.c.drawString(dot_x, text_y, ".")
 
             second_draw_x = None
@@ -725,16 +745,16 @@ class TonicSolfaPDFRenderer:
     def _calc_text_width_with_mods(self, text: str, modulations: List[Dict]) -> float:
         """Calculate total width of text including modulation superscripts"""
         if not modulations:
-            return self.c.stringWidth(text, "Helvetica", self.note_font_size)
+            return self.c.stringWidth(text, self.notation_font, self.note_font_size)
 
         total_width = 0
         superscript_size = self.note_font_size - 1
 
         for mod in modulations:
-            old_note_width = self.c.stringWidth(mod['old_note'], "Helvetica", superscript_size)
+            old_note_width = self.c.stringWidth(mod['old_note'], self.notation_font, superscript_size)
             total_width += old_note_width
 
-        total_width += self.c.stringWidth(text, "Helvetica", self.note_font_size)
+        total_width += self.c.stringWidth(text, self.notation_font, self.note_font_size)
 
         return total_width
 
@@ -767,36 +787,36 @@ class TonicSolfaPDFRenderer:
                                    x: float, y: float, beat_x: float, above_y: float):
         """Draw text with modulation superscripts"""
         if not modulations:
-            self.c.setFont("Helvetica", self.note_font_size)
+            self.c.setFont(self.notation_font, self.note_font_size)
             self.c.drawString(x, y, text)
             return
 
-        self.c.setFont("Helvetica", self.note_font_size)
+        self.c.setFont(self.notation_font, self.note_font_size)
         current_x = x
         text_idx = 0
 
         for mod in modulations:
             if mod['position'] > text_idx:
                 pre_text = text[text_idx:mod['position']]
-                self.c.setFont("Helvetica", self.note_font_size)
+                self.c.setFont(self.notation_font, self.note_font_size)
                 self.c.drawString(current_x, y, pre_text)
-                current_x += self.c.stringWidth(pre_text, "Helvetica", self.note_font_size)
+                current_x += self.c.stringWidth(pre_text, self.notation_font, self.note_font_size)
                 text_idx = mod['position']
 
             superscript_size = self.note_font_size - 1
-            self.c.setFont("Helvetica", superscript_size)
+            self.c.setFont(self.notation_font, superscript_size)
             old_note_text = mod['old_note']
             self.c.drawString(current_x, y + 4, old_note_text)
-            current_x += self.c.stringWidth(old_note_text, "Helvetica", superscript_size)
+            current_x += self.c.stringWidth(old_note_text, self.notation_font, superscript_size)
 
         if text_idx < len(text):
             remaining = text[text_idx:]
-            self.c.setFont("Helvetica", self.note_font_size)
+            self.c.setFont(self.notation_font, self.note_font_size)
             self.c.drawString(current_x, y, remaining)
 
     def _short_nav(self, nav_text: str) -> str:
         """Get short form of navigation marker for display"""
-        reverse_map = {v: k for k, v in NAVIGATION_MARKERS.items()}
+        reverse_map = {v: k for k, v in spec["navigation"]["markers"].items()}
         return reverse_map.get(nav_text, nav_text)
 
     # ─────────────────────────────────────────────────────────────────
@@ -910,13 +930,13 @@ class TonicSolfaPDFRenderer:
         if not syllable_positions:
             return
 
-        self.c.setFont("Helvetica", self.lyric_font_size)
+        self.c.setFont(self.notation_font, self.lyric_font_size)
 
         for syl_info in syllable_positions:
             text = syl_info['text']
             center_x = syl_info['center_x']
 
-            text_width = self.c.stringWidth(text, "Helvetica", self.lyric_font_size)
+            text_width = self.c.stringWidth(text, self.notation_font, self.lyric_font_size)
             draw_x = center_x - text_width / 2
 
             self.c.drawString(draw_x, lyric_y, text)

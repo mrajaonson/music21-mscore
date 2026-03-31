@@ -1,11 +1,6 @@
 import re
-from typing import List, Dict, Optional, Tuple, Any
-from config import (HEADER_INT_PROPS, HEADER_STRING_PROPS, HEADER_SPECIAL_PROPS, BARLINE, DEFAULT_VOICE_ORDER,
-                    DOUBLE_BARLINE, BEAT_SEPARATOR, SUBBEAT_SEPARATOR, STACCATO_PREFIX, VALID_KEYS, HOLD, REST_STAR,
-                    REST_DOUBLE_STAR, CHORD_OPEN, CHORD_CLOSE, MODULATION_SEPARATOR, NOTE_MELISMA_PREFIX,
-                    SOLFA_TOKENS_SORTED, OCTAVE_UP_CHAR, OCTAVE_DOWN_CHAR, VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM,
-                    FERMATA, NAVIGATION_MARKERS, TEXT_EXPRESSIONS, SEGNO_SYMBOL, CODA_SYMBOL, LYRICS_JOIN,
-                    LYRICS_REST_SKIP, LYRICS_HYPHEN, DEFAULTS)
+from typing import List, Optional
+from solfa_spec import spec
 from s2p_data_structures import (Song, VoiceLine, Measure, Note, NoteType, Block, LyricLine, Expression, Beat)
 
 class TonicSolfaParser:
@@ -20,7 +15,7 @@ class TonicSolfaParser:
         lines = text.strip().split('\n')
 
         # Initialize song with defaults
-        for key, value in DEFAULTS.items():
+        for key, value in spec["defaults"].items():
             if key == "TIMESIG":
                 self.song.time_sig = (4, 4)
             elif hasattr(self.song, key.lower()):
@@ -38,15 +33,12 @@ class TonicSolfaParser:
             if stripped.startswith('#'):
                 continue
 
-            # Check if it's a header property
-            header_parsed = False
-            for prop in HEADER_STRING_PROPS | HEADER_INT_PROPS | HEADER_SPECIAL_PROPS:
-                if stripped.upper().startswith(prop + " ") or stripped.upper() == prop:
-                    self._parse_header_line(stripped)
-                    header_parsed = True
-                    break
-
-            if not header_parsed:
+            # Check if it's a header property line (:PROP_NAME: value)
+            prefix = spec["header"]["prop_prefix"]
+            suffix = spec["header"]["prop_suffix"]
+            if stripped.startswith(prefix) and suffix in stripped[len(prefix):]:
+                self._parse_header_line(stripped)
+            else:
                 content_lines.append(line)
 
         # Parse content blocks
@@ -55,19 +47,26 @@ class TonicSolfaParser:
         return self.song
 
     def _parse_header_line(self, line: str):
-        """Parse a header property line"""
-        parts = line.split(None, 1)
-        if not parts:
+        """Parse a header property line in :PROP_NAME: value format"""
+        prefix = spec["header"]["prop_prefix"]
+        suffix = spec["header"]["prop_suffix"]
+
+        # Strip leading prefix, then split on suffix to get prop name and value
+        rest = line[len(prefix):]
+        idx = rest.index(suffix)
+        prop = rest[:idx].strip().upper()
+        value = rest[idx + len(suffix):].strip()
+
+        # Skip unknown property names
+        all_props = set(spec["header"]["string_props"]) | set(spec["header"]["int_props"]) | set(spec["header"]["special_props"])
+        if prop not in all_props:
             return
 
-        prop = parts[0].upper()
-        value = parts[1] if len(parts) > 1 else ""
-
-        if prop in HEADER_STRING_PROPS:
+        if prop in set(spec["header"]["string_props"]):
             attr = prop.lower()
             if hasattr(self.song, attr):
                 setattr(self.song, attr, value)
-        elif prop in HEADER_INT_PROPS:
+        elif prop in set(spec["header"]["int_props"]):
             attr = prop.lower()
             try:
                 setattr(self.song, attr, int(value))
@@ -114,7 +113,7 @@ class TonicSolfaParser:
 
     def _is_note_line(self, line: str) -> bool:
         """Check if a line contains note notation (has barlines)"""
-        return BARLINE in line
+        return spec["rhythm"]["barline"] in line
 
     def _parse_single_block(self, lines: List[str]) -> Optional[Block]:
         """Parse a single block of voice lines and lyrics"""
@@ -167,7 +166,7 @@ class TonicSolfaParser:
         else:
             # Implicit label based on line order
             if total_lines <= 4:
-                voice_label = DEFAULT_VOICE_ORDER[line_index] if line_index < 4 else f"V{line_index + 1}"
+                voice_label = spec["voices"]["default_order"][line_index] if line_index < 4 else f"V{line_index + 1}"
             else:
                 voice_label = f"V{line_index + 1}"
 
@@ -189,11 +188,11 @@ class TonicSolfaParser:
         notation = notation.strip()
 
         # Handle double barline at end
-        if notation.endswith(DOUBLE_BARLINE):
+        if notation.endswith(spec["rhythm"]["double_barline"]):
             notation = notation[:-2]
 
         # Split by single barlines
-        parts = notation.split(BARLINE)
+        parts = notation.split(spec["rhythm"]["barline"])
 
         # Filter out empty parts
         measures = [p.strip() for p in parts if p.strip()]
@@ -208,8 +207,19 @@ class TonicSolfaParser:
             measure.is_empty = True
             return measure
 
+        # Replace soft barline with beat separator, recording its position
+        soft_barline_char = spec["rhythm"]["soft_barline"]["char"]
+        beat_sep = spec["rhythm"]["beat_separator"]
+        soft_barline_pos = -1
+        if soft_barline_char in measure_str:
+            # Count beats before the soft barline to find its position
+            soft_idx = measure_str.index(soft_barline_char)
+            beats_before = measure_str[:soft_idx].count(beat_sep)
+            soft_barline_pos = beats_before
+            measure_str = measure_str.replace(soft_barline_char, beat_sep, 1)
+
         # Split into beats by ':'
-        beat_strs = measure_str.split(BEAT_SEPARATOR)
+        beat_strs = measure_str.split(beat_sep)
 
         # Check if all beats are empty (whole-measure rest)
         all_empty = all(not b.strip() or b.strip() == "" for b in beat_strs)
@@ -218,11 +228,14 @@ class TonicSolfaParser:
             # Still create empty beats for structure
             for _ in beat_strs:
                 measure.beats.append(Beat())
+            measure.soft_barline_after_beat = soft_barline_pos
             return measure
 
         for beat_str in beat_strs:
             beat = self._parse_beat(beat_str)
             measure.beats.append(beat)
+
+        measure.soft_barline_after_beat = soft_barline_pos
 
         return measure
 
@@ -237,9 +250,9 @@ class TonicSolfaParser:
             return beat
 
         # Check for subdivision (one dot splits the beat in half)
-        if SUBBEAT_SEPARATOR in beat_str:
+        if spec["rhythm"]["subbeat_separator"] in beat_str:
             beat.is_subdivided = True
-            parts = beat_str.split(SUBBEAT_SEPARATOR, 1)  # Split on first dot only
+            parts = beat_str.split(spec["rhythm"]["subbeat_separator"], 1)  # Split on first dot only
 
             # First half
             if parts[0]:
@@ -276,7 +289,7 @@ class TonicSolfaParser:
 
         # Check for staccato prefix (comma at start after separator)
         is_staccato = False
-        if group_str.startswith(STACCATO_PREFIX):
+        if group_str.startswith(spec["staccato"]["prefix"]):
             # Check if this is really staccato or octave modifier
             # Staccato is comma BEFORE the note letter, not after
             # So ",d" is staccato d, but "d," is d octave down
@@ -292,7 +305,7 @@ class TonicSolfaParser:
                 expr_content = group_str[1:close_idx]
                 # Check if this is a key change (for modulation)
                 # Key changes are like (Ab), (C#), (Db), etc.
-                if expr_content in VALID_KEYS:
+                if expr_content in spec["keys"]["valid_keys"]:
                     key_change = expr_content
                 else:
                     expr = self._parse_expression(expr_content)
@@ -306,21 +319,21 @@ class TonicSolfaParser:
         group_str = group_str.strip()
 
         # Check for special cases
-        if group_str == HOLD:
+        if group_str == spec["rhythm"]["hold"]:
             note = Note(type=NoteType.HOLD, expressions=expressions)
             return [note]
 
-        if group_str == REST_STAR:
+        if group_str == spec["rhythm"]["rest_explicit"]:
             note = Note(type=NoteType.REST, expressions=expressions)
             return [note]
 
-        if group_str == REST_DOUBLE_STAR:
+        if group_str == spec["rhythm"]["rest_double"]:
             # Two-beat rest - return two rests
             return [Note(type=NoteType.REST), Note(type=NoteType.REST)]
 
         # Check for chord
-        if group_str.startswith(CHORD_OPEN) and CHORD_CLOSE in group_str:
-            chord_end = group_str.index(CHORD_CLOSE)
+        if group_str.startswith(spec["chords"]["open"]) and spec["chords"]["close"] in group_str:
+            chord_end = group_str.index(spec["chords"]["close"])
             chord_content = group_str[1:chord_end]
             chord_notes = []
             for note_str in chord_content.split('.'):
@@ -332,8 +345,8 @@ class TonicSolfaParser:
             return [note]
 
         # Check for modulation (old_note/new_note)
-        if MODULATION_SEPARATOR in group_str:
-            parts = group_str.split(MODULATION_SEPARATOR)
+        if spec["modulation"]["separator"] in group_str:
+            parts = group_str.split(spec["modulation"]["separator"])
             if len(parts) == 2:
                 note = Note(
                     type=NoteType.MODULATION,
@@ -354,7 +367,7 @@ class TonicSolfaParser:
         while remaining:
             # Check for melisma prefix
             is_melisma = False
-            if remaining.startswith(NOTE_MELISMA_PREFIX):
+            if remaining.startswith(spec["staccato"]["melisma_prefix"]):
                 is_melisma = True
                 remaining = remaining[1:]
 
@@ -392,7 +405,7 @@ class TonicSolfaParser:
 
         # Try to match solfa tokens (longest first)
         matched_solfa = None
-        for token in SOLFA_TOKENS_SORTED:
+        for token in spec["notes"]["tokens_sorted"]:
             if text.lower().startswith(token):
                 matched_solfa = token
                 break
@@ -403,7 +416,7 @@ class TonicSolfaParser:
         # Get octave modifiers after the solfa
         remaining = text[len(matched_solfa):]
         octave_mod = ""
-        while remaining and remaining[0] in (OCTAVE_UP_CHAR, OCTAVE_DOWN_CHAR):
+        while remaining and remaining[0] in (spec["octave"]["up_char"], spec["octave"]["down_char"]):
             octave_mod += remaining[0]
             remaining = remaining[1:]
 
@@ -411,32 +424,32 @@ class TonicSolfaParser:
 
     def _parse_expression(self, content: str) -> Optional[Expression]:
         """Parse expression content inside parentheses"""
-        if content in VALID_DYNAMICS:
+        if content in spec["dynamics"]["valid_dynamics"]:
             return Expression(type="dynamic", value=content)
-        elif content == HAIRPIN_CRESC:
+        elif content == spec["dynamics"]["hairpins"]["crescendo"]:
             return Expression(type="hairpin", value="cresc.")
-        elif content == HAIRPIN_DIM:
+        elif content == spec["dynamics"]["hairpins"]["diminuendo"]:
             return Expression(type="hairpin", value="dim.")
-        elif content == FERMATA:
+        elif content == spec["dynamics"]["fermata"]:
             return Expression(type="fermata", value="fermata")
-        elif content in NAVIGATION_MARKERS:
-            return Expression(type="navigation", value=NAVIGATION_MARKERS[content])
-        elif content in TEXT_EXPRESSIONS:
-            return Expression(type="text", value=TEXT_EXPRESSIONS[content])
+        elif content in spec["navigation"]["markers"]:
+            return Expression(type="navigation", value=spec["navigation"]["markers"][content])
+        elif content in spec["dynamics"]["text_expressions"]:
+            return Expression(type="text", value=spec["dynamics"]["text_expressions"][content])
         else:
             # Check for numbered navigation markers (DS1, DS2, S1, S2, DSF1, etc.)
             import re
             # Match patterns like DS1, DS2, S1, S2, DSF1, DSC1, etc.
-            match = re.match(r'^(DS|DSF|DSC|SEGNO|S|CODA|C|TC|DC|DCF|DCC|FINE)(\d+)$', content)
+            match = re.match(r'^(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)(\d+)$', content)
             if match:
                 base_marker = match.group(1)
                 number = match.group(2)
-                if base_marker in NAVIGATION_MARKERS:
-                    base_text = NAVIGATION_MARKERS[base_marker]
+                if base_marker in spec["navigation"]["markers"]:
+                    base_text = spec["navigation"]["markers"][base_marker]
                     # For Segno symbol, append number directly
-                    if base_text == SEGNO_SYMBOL:
+                    if base_text == spec["navigation"]["segno_symbol"]:
                         display_text = f"{base_text}{number}"
-                    elif base_text == CODA_SYMBOL:
+                    elif base_text == spec["navigation"]["coda_symbol"]:
                         display_text = f"{base_text}{number}"
                     else:
                         # For text markers like D.S., append number
@@ -462,7 +475,7 @@ class TonicSolfaParser:
         # "text..."        - no prefix (verse 1, all voices)
 
         verse = "1"
-        voices = list(available_voices) if available_voices else DEFAULT_VOICE_ORDER[:]
+        voices = list(available_voices) if available_voices else spec["voices"]["default_order"][:]
         display_prefix = ""
         text = line
 
@@ -496,7 +509,7 @@ class TonicSolfaParser:
                     parsed_voices = self._parse_voice_labels(voice_part)
                     if parsed_voices:
                         voices = parsed_voices
-                        if set(parsed_voices) != set(DEFAULT_VOICE_ORDER[:len(available_voices)]):
+                        if set(parsed_voices) != set(spec["voices"]["default_order"][:len(available_voices)]):
                             display_prefix += voice_part
 
                 text = rest
@@ -507,7 +520,7 @@ class TonicSolfaParser:
                 parsed_voices = self._parse_voice_labels(prefix)
                 if parsed_voices:
                     voices = parsed_voices
-                    if set(parsed_voices) != set(DEFAULT_VOICE_ORDER[:len(available_voices)]):
+                    if set(parsed_voices) != set(spec["voices"]["default_order"][:len(available_voices)]):
                         display_prefix = prefix
                     text = rest
                     parsed = True
@@ -553,17 +566,17 @@ class TonicSolfaParser:
         syllables = []
 
         # Replace joined syllables (^) with a special marker
-        text = text.replace(LYRICS_JOIN, " ")
+        text = text.replace(spec["lyrics"]["join"], " ")
 
         # Split by spaces and hyphens
         words = text.split()
 
         for word in words:
-            if word == LYRICS_REST_SKIP:
+            if word == spec["lyrics"]["rest_skip"]:
                 syllables.append("*")
-            elif LYRICS_HYPHEN in word:
+            elif spec["lyrics"]["hyphen"] in word:
                 # Split hyphenated word
-                parts = word.split(LYRICS_HYPHEN)
+                parts = word.split(spec["lyrics"]["hyphen"])
                 for i, part in enumerate(parts):
                     if part:
                         if i < len(parts) - 1:

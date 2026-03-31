@@ -3,29 +3,24 @@
 import re
 from pathlib import Path
 from s2m_models import NoteEvent
-from config import (
-    DEFAULTS, HEADER_STRING_PROPS, HEADER_INT_PROPS, HEADER_SPECIAL_PROPS,
-    ALL_SOLFA_NOTES, SOLFA_TOKENS_SORTED, CHROMATIC_SHARP, CHROMATIC_FLAT,
-    OCTAVE_UP_CHAR, OCTAVE_DOWN_CHAR,
-    BEAT_SEPARATOR, SUBBEAT_SEPARATOR, HOLD, REST_STAR, REST_DOUBLE_STAR,
-    STACCATO_PREFIX,
-    NOTE_MELISMA_PREFIX, LYRICS_HYPHEN, LYRICS_JOIN,
-    DEFAULT_VOICE_ORDER, ALL_PART_LABELS,
-    MODULATION_SEPARATOR, FERMATA, NAVIGATION_MARKERS, VALID_KEYS, VALID_DYNAMICS, TEXT_EXPRESSIONS,
-    CHORD_OPEN, CHORD_CLOSE,
-)
+from solfa_spec import spec
 
 
 # ──────────────────────────────────────────────────────────────────────
 #  HEADER PARSING
 # ──────────────────────────────────────────────────────────────────────
 
-HEADER_KEYWORDS = HEADER_STRING_PROPS | HEADER_INT_PROPS | HEADER_SPECIAL_PROPS
+_HEADER_STRING_PROPS = set(spec["header"]["string_props"])
+_HEADER_INT_PROPS = set(spec["header"]["int_props"])
+_HEADER_SPECIAL_PROPS = set(spec["header"]["special_props"])
+_HEADER_KEYWORDS = _HEADER_STRING_PROPS | _HEADER_INT_PROPS | _HEADER_SPECIAL_PROPS
 
 
 def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
-    """Extract property lines from the top of the file."""
-    props = dict(DEFAULTS)
+    """Extract property lines (:PROP: value) from the top of the file."""
+    prefix = spec["header"]["prop_prefix"]
+    suffix = spec["header"]["prop_suffix"]
+    props = dict(spec["defaults"])
     remaining = []
     header_done = False
 
@@ -35,20 +30,23 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
             remaining.append(line)
             continue
         if not header_done and stripped:
-            parts = stripped.split(None, 1)
-            keyword = parts[0].upper()
-            if keyword in HEADER_KEYWORDS:
-                if len(parts) == 2:
-                    value = parts[1].strip()
-                    if keyword in HEADER_INT_PROPS:
-                        try:
-                            props[keyword] = int(value)
-                        except ValueError:
-                            pass
-                    elif keyword == "TIMESIG":
-                        props[keyword] = value
-                    else:
-                        props[keyword] = value
+            # Match :PROP: value format
+            if stripped.startswith(prefix) and suffix in stripped[len(prefix):]:
+                rest = stripped[len(prefix):]
+                idx = rest.index(suffix)
+                keyword = rest[:idx].strip().upper()
+                value = rest[idx + len(suffix):].strip()
+
+                if keyword not in _HEADER_KEYWORDS:
+                    continue  # unknown prop, skip silently
+
+                if keyword in _HEADER_INT_PROPS:
+                    try:
+                        props[keyword] = int(value)
+                    except ValueError:
+                        pass
+                else:
+                    props[keyword] = value
                 continue
             else:
                 header_done = True
@@ -68,13 +66,13 @@ _DYNAMIC_PREFIX_RE = re.compile(r'^\(([^)]+)\)')
 # Regex for numbered navigation markers (DS1, SEGNO2, S1, CODA1, etc.)
 # S is a short alias for SEGNO, C for CODA
 _NUMBERED_NAV_RE = re.compile(
-    r'^(DS|DSF|DSC|SEGNO|S|CODA|C|TC|DC|DCF|DCC|FINE)(\d+)$'
+    r'^(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)(\d+)$'
 )
 
 
 def _is_navigation_marker(value: str) -> bool:
     """Check if a paren value is a navigation marker (plain or numbered)."""
-    if value in NAVIGATION_MARKERS:
+    if value in spec["navigation"]["markers"]:
         return True
     return bool(_NUMBERED_NAV_RE.match(value))
 
@@ -95,13 +93,13 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
             break
         value = dm.group(1)
         s = s[dm.end():]
-        if value == FERMATA:
+        if value == spec["dynamics"]["fermata"]:
             has_fermata = True
         elif _is_navigation_marker(value):
             nav = value
-        elif value in VALID_DYNAMICS:
+        elif value in spec["dynamics"]["valid_dynamics"]:
             dyn = value
-        elif value in TEXT_EXPRESSIONS:
+        elif value in spec["dynamics"]["text_expressions"]:
             dyn = value  # text expressions (cresc, dim, etc.) treated like dynamics
         # else: unknown paren content, ignore
 
@@ -109,8 +107,8 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         return NoteEvent(is_rest=True, raw=" ", dynamic=dyn, fermata=has_fermata, navigation=nav), s
 
     # --- chord: <d.m.s> ---
-    if s and s[0] == CHORD_OPEN:
-        close_idx = s.find(CHORD_CLOSE)
+    if s and s[0] == spec["chords"]["open"]:
+        close_idx = s.find(spec["chords"]["close"])
         if close_idx > 0:
             chord_str = s[1:close_idx]
             s = s[close_idx + 1:]
@@ -137,7 +135,7 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
 
     # --- melisma prefix ---
     is_melisma = False
-    if s and s.startswith(NOTE_MELISMA_PREFIX):
+    if s and s.startswith(spec["staccato"]["melisma_prefix"]):
         is_melisma = True
         s = s[1:]
         if not s:
@@ -147,18 +145,18 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         return None, s
 
     # --- hold ---
-    if s[0] == HOLD:
+    if s[0] == spec["rhythm"]["hold"]:
         return NoteEvent(is_hold=True, raw="-", dynamic=dyn, fermata=has_fermata, navigation=nav), s[1:]
 
     # --- rest (* or **) ---
-    if s.startswith(REST_DOUBLE_STAR):
+    if s.startswith(spec["rhythm"]["rest_double"]):
         return NoteEvent(is_rest=True, raw="**", dynamic=dyn, fermata=has_fermata, navigation=nav), s[2:]
-    if s.startswith(REST_STAR):
+    if s.startswith(spec["rhythm"]["rest_explicit"]):
         return NoteEvent(is_rest=True, raw="*", dynamic=dyn, fermata=has_fermata, navigation=nav), s[1:]
 
     # --- solfa note (longest match) ---
     matched_solfa = None
-    for tok in SOLFA_TOKENS_SORTED:
+    for tok in spec["notes"]["tokens_sorted"]:
         if s.startswith(tok):
             matched_solfa = tok
             break
@@ -168,16 +166,16 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         return None, s
 
     s = s[len(matched_solfa):]
-    semitone = ALL_SOLFA_NOTES[matched_solfa]
-    is_sharp = matched_solfa in CHROMATIC_SHARP
-    is_flat = matched_solfa in CHROMATIC_FLAT
+    semitone = spec["notes"]["all_notes"][matched_solfa]
+    is_sharp = matched_solfa in spec["notes"]["chromatic_sharp"]
+    is_flat = matched_solfa in spec["notes"]["chromatic_flat"]
 
     # --- octave modifiers ---
     octave_shift = 0
-    while s and s[0] == OCTAVE_UP_CHAR:
+    while s and s[0] == spec["octave"]["up_char"]:
         octave_shift += 1
         s = s[1:]
-    while s and s[0] == OCTAVE_DOWN_CHAR:
+    while s and s[0] == spec["octave"]["down_char"]:
         octave_shift -= 1
         s = s[1:]
 
@@ -185,8 +183,8 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         solfa=matched_solfa, semitone=semitone, octave_shift=octave_shift,
         is_melisma=is_melisma,
         is_chromatic_sharp=is_sharp, is_chromatic_flat=is_flat,
-        raw=matched_solfa + OCTAVE_UP_CHAR * max(0, octave_shift)
-                         + OCTAVE_DOWN_CHAR * max(0, -octave_shift),
+        raw=matched_solfa + spec["octave"]["up_char"] * max(0, octave_shift)
+                         + spec["octave"]["down_char"] * max(0, -octave_shift),
         dynamic=dyn, fermata=has_fermata, navigation=nav,
     )
     return evt, s
@@ -200,11 +198,11 @@ def _protect_chord_dots(s: str) -> str:
     result = []
     inside = False
     for ch in s:
-        if ch == CHORD_OPEN:
+        if ch == spec["chords"]["open"]:
             inside = True
-        elif ch == CHORD_CLOSE:
+        elif ch == spec["chords"]["close"]:
             inside = False
-        if ch == SUBBEAT_SEPARATOR and inside:
+        if ch == spec["rhythm"]["subbeat_separator"] and inside:
             result.append(_CHORD_DOT_PLACEHOLDER)
         else:
             result.append(ch)
@@ -213,7 +211,7 @@ def _protect_chord_dots(s: str) -> str:
 
 def _restore_chord_dots(s: str) -> str:
     """Restore placeholder back to dots."""
-    return s.replace(_CHORD_DOT_PLACEHOLDER, SUBBEAT_SEPARATOR)
+    return s.replace(_CHORD_DOT_PLACEHOLDER, spec["rhythm"]["subbeat_separator"])
 
 
 def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
@@ -226,7 +224,7 @@ def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
     # Protect dots inside chord brackets <d.m.s> from being split
     beat_str = _protect_chord_dots(beat_str)
 
-    groups = beat_str.split(SUBBEAT_SEPARATOR)
+    groups = beat_str.split(spec["rhythm"]["subbeat_separator"])
     events: list[NoteEvent] = []
     has_multiple_groups = len(groups) > 1
 
@@ -241,7 +239,7 @@ def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
 
         # Leading comma = staccato marker (not octave down)
         is_staccato = False
-        if g.startswith(STACCATO_PREFIX):
+        if g.startswith(spec["staccato"]["prefix"]):
             is_staccato = True
             g = g[1:]  # strip the leading comma
 
@@ -265,7 +263,7 @@ def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
 # ──────────────────────────────────────────────────────────────────────
 
 # Build voice label regex from config
-_label_alts = "|".join(re.escape(lbl) for lbl in ALL_PART_LABELS)
+_label_alts = "|".join(re.escape(lbl) for lbl in sorted(spec["voices"]["voice_config"].keys(), key=len, reverse=True))
 _VOICE_LABEL_RE = re.compile(rf'^({_label_alts}|[SATB]\d+)(?=\s|\t|\|)')
 
 
@@ -301,7 +299,7 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
 
     Returns: (modulation_str, remaining_beat, key_change)
     """
-    if MODULATION_SEPARATOR not in beat_str:
+    if spec["modulation"]["separator"] not in beat_str:
         return None, beat_str, None
 
     # Skip over all parenthesized prefixes to find the modulation slash.
@@ -315,29 +313,29 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
             break
         candidate = work_str[1:close_idx]
         rest_after = work_str[close_idx + 1:]
-        if candidate in VALID_KEYS and key_change is None:
+        if candidate in spec["keys"]["valid_keys"] and key_change is None:
             key_change = candidate
         else:
             prefix_parens.append(f"({candidate})")
         work_str = rest_after
 
-    if MODULATION_SEPARATOR not in work_str:
+    if spec["modulation"]["separator"] not in work_str:
         return None, beat_str, None
 
-    slash_idx = work_str.index(MODULATION_SEPARATOR)
+    slash_idx = work_str.index(spec["modulation"]["separator"])
     left_str = work_str[:slash_idx].strip()
     right_str = work_str[slash_idx + 1:]
 
     # Validate left side: strip octave modifiers (' ,) then check for solfa token
-    left_bare = left_str.rstrip(OCTAVE_UP_CHAR + OCTAVE_DOWN_CHAR)
-    left_valid = any(left_bare == t for t in SOLFA_TOKENS_SORTED)
+    left_bare = left_str.rstrip(spec["octave"]["up_char"] + spec["octave"]["down_char"])
+    left_valid = any(left_bare == t for t in spec["notes"]["tokens_sorted"])
     if not left_valid:
         return None, beat_str, None
 
     # Parse the right side: consume solfa token + octave modifiers
     right_stripped = right_str.lstrip()
     matched_right = None
-    for tok in SOLFA_TOKENS_SORTED:
+    for tok in spec["notes"]["tokens_sorted"]:
         if right_stripped.startswith(tok):
             matched_right = tok
             break
@@ -348,7 +346,7 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
     # e.g. s, means "sol octave down" — pitch class is the same but
     # we consume to avoid leaving a dangling comma)
     pos = len(matched_right)
-    while pos < len(right_stripped) and right_stripped[pos] in (OCTAVE_UP_CHAR, OCTAVE_DOWN_CHAR):
+    while pos < len(right_stripped) and right_stripped[pos] in (spec["octave"]["up_char"], spec["octave"]["down_char"]):
         pos += 1
 
     right_token = right_stripped[:pos]
@@ -371,7 +369,9 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
         if not mstr:
             continue
 
-        beats_raw = mstr.split(BEAT_SEPARATOR)
+        # Soft barline is purely visual — treat as beat separator
+        mstr = mstr.replace(spec["rhythm"]["soft_barline"]["char"], spec["rhythm"]["beat_separator"])
+        beats_raw = mstr.split(spec["rhythm"]["beat_separator"])
         beats = []
         modulations = []
         key_changes = []
@@ -434,7 +434,7 @@ def _extract_voice_labels(s: str) -> list[str]:
     pos = 0
     while pos < len(s):
         matched = None
-        for lbl in ALL_PART_LABELS:  # sorted longest first
+        for lbl in sorted(spec["voices"]["voice_config"].keys(), key=len, reverse=True):  # sorted longest first
             if s[pos:].startswith(lbl):
                 matched = lbl
                 break
@@ -518,13 +518,13 @@ def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
     syllables = []
     words = stripped.split()
     for word in words:
-        parts = word.split(LYRICS_HYPHEN)
+        parts = word.split(spec["lyrics"]["hyphen"])
         if len(parts) == 1:
-            part = parts[0].replace(LYRICS_JOIN, " ")
+            part = parts[0].replace(spec["lyrics"]["join"], " ")
             syllables.append((part, "single"))
         else:
             for i, part in enumerate(parts):
-                part = part.replace(LYRICS_JOIN, " ")
+                part = part.replace(spec["lyrics"]["join"], " ")
                 if i == 0:
                     syllables.append((part, "begin"))
                 elif i == len(parts) - 1:
@@ -557,7 +557,7 @@ def parse_file(filepath: str) -> dict:
     voice_data: dict[str, list] = {}
     lyrics_data: dict[str, dict] = {}
 
-    default_voice_order = list(DEFAULT_VOICE_ORDER)
+    default_voice_order = list(spec["voices"]["default_order"])
     voice_index = 0
     prev_was_note_line = False
     last_voice_label = "S"

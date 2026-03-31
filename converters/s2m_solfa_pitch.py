@@ -2,14 +2,12 @@
 
 from music21 import pitch, key
 from s2m_models import NoteEvent
-from config import (
-    SOLFA_TO_SEMITONE, VALID_KEYS, MODULATION_SEPARATOR,
-)
+from solfa_spec import spec
 
 
 # Map key name → MIDI note number for that key at octave 4
 _KEY_NAME_TO_MIDI_BASE = {}
-for _kn in VALID_KEYS:
+for _kn in spec["keys"]["valid_keys"]:
     _p = pitch.Pitch(_kn + "4")
     _KEY_NAME_TO_MIDI_BASE[_kn] = _p.midi
 
@@ -41,7 +39,7 @@ def solfa_to_pitch(evt: NoteEvent, current_key: str, base_octave: int) -> pitch.
 
     elif evt.is_chromatic_sharp:
         base_solfa = evt.solfa[0]
-        base_semi = SOLFA_TO_SEMITONE.get(base_solfa, 0)
+        base_semi = spec["notes"]["solfa_to_semitone"].get(base_solfa, 0)
         if base_semi in degree_map:
             idx = degree_map[base_semi]
             if idx < len(scale_pitches):
@@ -59,7 +57,7 @@ def solfa_to_pitch(evt: NoteEvent, current_key: str, base_octave: int) -> pitch.
     elif evt.is_chromatic_flat:
         _flat_base = {"ra": "r", "ma": "m", "sa": "s", "la": "l", "ta": "t"}
         base_solfa = _flat_base.get(evt.solfa, evt.solfa[0])
-        base_semi = SOLFA_TO_SEMITONE.get(base_solfa, 0)
+        base_semi = spec["notes"]["solfa_to_semitone"].get(base_solfa, 0)
         if base_semi in degree_map:
             idx = degree_map[base_semi]
             if idx < len(scale_pitches):
@@ -85,7 +83,7 @@ def resolve_modulation(mod_str: str, current_key: str, base_octave: int) -> str:
     """
     from s2m_solfa_parser import _parse_single_token
 
-    parts = mod_str.split(MODULATION_SEPARATOR)
+    parts = mod_str.split(spec["modulation"]["separator"])
     old_solfa_str = parts[0].strip()
     new_solfa_str = parts[1].strip()
 
@@ -111,7 +109,7 @@ def resolve_modulation(mod_str: str, current_key: str, base_octave: int) -> str:
     current_is_sharp = "#" in current_key
 
     candidates = []
-    for kn in VALID_KEYS:
+    for kn in spec["keys"]["valid_keys"]:
         kp = pitch.Pitch(kn)
         if kp.pitchClass == new_tonic.pitchClass:
             candidates.append(kn)

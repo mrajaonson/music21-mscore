@@ -1,6 +1,6 @@
 """Duration assignment and hold consolidation."""
 
-from s2m_models import NoteEvent, TimedEvent
+from s2m_models import TimedEvent
 
 
 def assign_durations(measures: list[dict], time_sig: str) -> list[list[TimedEvent]]:

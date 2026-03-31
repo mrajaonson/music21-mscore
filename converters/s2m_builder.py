@@ -6,11 +6,31 @@ from music21 import (
     duration, metadata, tie, repeat, expressions, dynamics, chord,
     articulations,
 )
-from config import (
-    DEFAULTS, VOICE_BASE_LABELS, VOICE_CONFIG, VALID_DYNAMICS, HAIRPIN_CRESC, HAIRPIN_DIM, TEXT_EXPRESSIONS,
-    LYRICS_REST_SKIP, NAVIGATION_MARKERS,
-)
+from solfa_spec import spec
+from music21 import instrument as m21instrument
 from s2m_solfa_pitch import solfa_to_pitch, resolve_modulation
+
+_INSTRUMENT_CLASS_MAP = {
+    "Soprano": m21instrument.Soprano,
+    "Alto":    m21instrument.Alto,
+    "Tenor":   m21instrument.Tenor,
+    "Bass":    m21instrument.Bass,
+    "Piano":   m21instrument.Piano,
+}
+
+def _build_voice_config() -> dict:
+    result = {}
+    for label, cfg in spec["voices"]["voice_config"].items():
+        result[label] = {
+            "name":          cfg["name"],
+            "instrument":    _INSTRUMENT_CLASS_MAP.get(cfg["instrument_class"]),
+            "clef":          cfg["clef"],
+            "octave_offset": cfg["octave_offset"],
+            "range":         (cfg["range_low"], cfg["range_high"]),
+        }
+    return result
+
+_VOICE_CONFIG = _build_voice_config()
 from s2m_duration import assign_durations, consolidate_holds
 
 
@@ -23,19 +43,19 @@ def _get_voice_base(voice_label: str) -> str:
     Extract base config key for a voice label.
     'S1' → 'S', 'T2' → 'T', 'PR' → 'PR', 'PL' → 'PL'.
     """
-    # Direct match in VOICE_CONFIG (handles PR, PL, OR, OL, OP, S, A, T, B)
-    if voice_label in VOICE_CONFIG:
+    # Direct match (handles PR, PL, OR, OL, OP, S, A, T, B)
+    if voice_label in _VOICE_CONFIG:
         return voice_label
     # Numbered voice: S1 → S, T2 → T
-    if voice_label and voice_label[0] in VOICE_BASE_LABELS:
+    if voice_label and voice_label[0] in spec["voices"]["base_labels"]:
         return voice_label[0]
     return voice_label
 
 
 def _get_voice_config(voice_label: str) -> dict:
-    """Get VOICE_CONFIG entry, inheriting from base for numbered voices."""
+    """Get voice config entry, inheriting from base for numbered voices."""
     base = _get_voice_base(voice_label)
-    return VOICE_CONFIG.get(base, VOICE_CONFIG["S"])
+    return _VOICE_CONFIG.get(base, _VOICE_CONFIG["S"])
 
 
 def _get_voice_full_name(voice_label: str) -> str:
@@ -95,24 +115,24 @@ def _make_chord(pitches: list, ql: float) -> chord.Chord:
 
 def _apply_dynamic(measure: stream.Measure, dyn_str: str):
     """Append a dynamic, hairpin, or text expression to a measure (placed above staff)."""
-    if dyn_str in VALID_DYNAMICS:
+    if dyn_str in spec["dynamics"]["valid_dynamics"]:
         d = dynamics.Dynamic(dyn_str)
         d.placement = "above"
         measure.append(d)
-    elif dyn_str == HAIRPIN_CRESC:
+    elif dyn_str == spec["dynamics"]["hairpins"]["crescendo"]:
         # Crescendo hairpin needs start+end notes (spanner) which is complex.
         # Use italic text "cresc." which MuseScore reads reliably.
         te = expressions.TextExpression("cresc.")
         te.style.fontStyle = "italic"
         te.placement = "above"
         measure.append(te)
-    elif dyn_str == HAIRPIN_DIM:
+    elif dyn_str == spec["dynamics"]["hairpins"]["diminuendo"]:
         te = expressions.TextExpression("dim.")
         te.style.fontStyle = "italic"
         te.placement = "above"
         measure.append(te)
-    elif dyn_str in TEXT_EXPRESSIONS:
-        te = expressions.TextExpression(TEXT_EXPRESSIONS[dyn_str])
+    elif dyn_str in spec["dynamics"]["text_expressions"]:
+        te = expressions.TextExpression(spec["dynamics"]["text_expressions"][dyn_str])
         te.style.fontStyle = "italic"
         te.placement = "above"
         measure.append(te)
@@ -144,7 +164,7 @@ def _apply_navigation(measure: stream.Measure, nav_str: str):
         return
 
     # All others go above the last note (left of barline)
-    display = NAVIGATION_MARKERS.get(nav_str, nav_str)
+    display = spec["navigation"]["markers"].get(nav_str, nav_str)
     te = expressions.TextExpression(display)
     te.placement = "above"
     te.style.fontStyle = "bold"
@@ -190,18 +210,18 @@ def build_score(parsed: dict) -> stream.Score:
 
     # ── Metadata ──
     md = metadata.Metadata()
-    md.title = props.get("TITLE", DEFAULTS["TITLE"])
-    md.composer = props.get("COMPOSER", DEFAULTS["COMPOSER"])
+    md.title = props.get("TITLE", spec["defaults"]["TITLE"])
+    md.composer = props.get("COMPOSER", spec["defaults"]["COMPOSER"])
     if props.get("AUTHOR"):
         md.lyricist = props["AUTHOR"]
     md.date = date.today().isoformat()
     md.copyright = f"Generated on {date.today().strftime('%Y-%m-%d')}"
     score.metadata = md
 
-    time_sig_str = props.get("TIMESIG", DEFAULTS["TIMESIG"])
-    current_key = props.get("KEY", DEFAULTS["KEY"])
-    base_octave = props.get("OCTAVE", DEFAULTS["OCTAVE"])
-    bpm = props.get("TEMPO", DEFAULTS["TEMPO"])
+    time_sig_str = props.get("TIMESIG", spec["defaults"]["TIMESIG"])
+    current_key = props.get("KEY", spec["defaults"]["KEY"])
+    base_octave = props.get("OCTAVE", spec["defaults"]["OCTAVE"])
+    bpm = props.get("TEMPO", spec["defaults"]["TEMPO"])
 
     ts_num, ts_den = map(int, time_sig_str.split("/"))
     measure_ql = ts_num * (4.0 / ts_den)
@@ -316,7 +336,7 @@ def build_score(parsed: dict) -> stream.Score:
                         m21_measure.append(r)
                         # Rests only skip * markers in lyrics
                         for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
-                            if cursor < len(syls) and syls[cursor][0] == LYRICS_REST_SKIP:
+                            if cursor < len(syls) and syls[cursor][0] == spec["lyrics"]["rest_skip"]:
                                 lyrics_cursors[lyric_num] = (syls, cursor + 1)
                         prev_note_obj = None
                         needs_tie_start = False
@@ -356,7 +376,7 @@ def build_score(parsed: dict) -> stream.Score:
                             for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
                                 if cursor < len(syls):
                                     syl_text, syl_type = syls[cursor]
-                                    if syl_text == LYRICS_REST_SKIP:
+                                    if syl_text == spec["lyrics"]["rest_skip"]:
                                         # * = skip, advance cursor but don't add lyric
                                         lyrics_cursors[lyric_num] = (syls, cursor + 1)
                                     else:
