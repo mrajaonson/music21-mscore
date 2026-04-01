@@ -19,15 +19,15 @@ meta:
 # DEFAULTS — file-level properties when not specified in the .solfa header
 # -----------------------------------------------------------------------------
 defaults:
-  TITLE:    "Untitled"
-  AUTHOR:   ""
-  COMPOSER: ""
-  KEY:      "C"
-  TEMPO:    null
-  TIMESIG:  "4/4"
-  METER:    null
-  OCTAVE:   4         # base octave for unmarked notes (middle-C octave)
-  COMMENTS: ""
+  title:    "Untitled"
+  author:   ""
+  composer: ""
+  key:      "C"
+  tempo:    null
+  timesig:  "4/4"
+  meter:    null
+  octave:   4         # base octave for unmarked notes (middle-C octave)
+  comments: ""
 
 
 # -----------------------------------------------------------------------------
@@ -43,9 +43,9 @@ header:
   prop_suffix: ":"
 
   # Property names by parse type
-  string_props:  [TITLE, AUTHOR, COMPOSER, KEY, METER, COMMENTS]
-  int_props:     [TEMPO, OCTAVE]
-  special_props: [TIMESIG]   # parsed as "N/D" → two integers
+  string_props:  [title, author, composer, key, meter, comments]
+  int_props:     [tempo, octave]
+  special_props: [timesig]   # parsed as "N/D" → two integers
 
 
 # -----------------------------------------------------------------------------

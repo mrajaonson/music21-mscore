@@ -4,7 +4,7 @@ Tonic Solfa .txt → MusicXML (.xml) → PDF converter
 Output is compatible with MuseScore 4.
 
 Usage:
-    python3 main.py.py <input.txt>
+    python3 -m converters.solfa2musicxml.converter <input.txt>
 
 Generates .xml and .pdf in the same directory as the input file.
 """
@@ -12,8 +12,8 @@ Generates .xml and .pdf in the same directory as the input file.
 import sys
 import subprocess
 from pathlib import Path
-from s2m_solfa_parser import parse_file
-from s2m_builder import build_score
+from .solfa_parser import parse_file
+from .builder import build_score
 
 
 def convert(input_path: str):
@@ -25,10 +25,10 @@ def convert(input_path: str):
     parsed = parse_file(str(input_p))
 
     props = parsed["properties"]
-    print(f"  Title:    {props.get('TITLE')}")
-    print(f"  Key:      {props.get('KEY')}")
-    print(f"  Tempo:    {props.get('TEMPO')}")
-    print(f"  TimeSig:  {props.get('TIMESIG')}")
+    print(f"  Title:    {props.get('title')}")
+    print(f"  Key:      {props.get('key')}")
+    print(f"  Tempo:    {props.get('tempo')}")
+    print(f"  TimeSig:  {props.get('timesig')}")
     print(f"  Voices:   {list(parsed['voices'].keys())}")
     print(f"  Lyrics:   {list(parsed['lyrics'].keys())}")
 
@@ -64,7 +64,7 @@ def convert(input_path: str):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 main.py.py <input.txt>")
+        print("Usage: python3 -m converters.solfa2musicxml.converter <input.txt>")
         sys.exit(1)
 
     convert(sys.argv[1])

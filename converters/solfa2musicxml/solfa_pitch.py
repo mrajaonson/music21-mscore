@@ -1,8 +1,8 @@
 """Pitch conversion and key modulation resolution."""
 
 from music21 import pitch, key
-from s2m_models import NoteEvent
-from solfa_spec import spec
+from .models import NoteEvent
+from ..shared import spec
 
 
 # Map key name → MIDI note number for that key at octave 4
@@ -81,7 +81,7 @@ def resolve_modulation(mod_str: str, current_key: str, base_octave: int) -> str:
     affect the key calculation (only pitch class matters).
     Imports _parse_single_token locally to avoid circular imports.
     """
-    from s2m_solfa_parser import _parse_single_token
+    from .solfa_parser import _parse_single_token
 
     parts = mod_str.split(spec["modulation"]["separator"])
     old_solfa_str = parts[0].strip()

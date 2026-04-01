@@ -2,8 +2,8 @@
 
 import re
 from pathlib import Path
-from s2m_models import NoteEvent
-from solfa_spec import spec
+from .models import NoteEvent
+from ..shared import spec
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
             if stripped.startswith(prefix) and suffix in stripped[len(prefix):]:
                 rest = stripped[len(prefix):]
                 idx = rest.index(suffix)
-                keyword = rest[:idx].strip().upper()
+                keyword = rest[:idx].strip()
                 value = rest[idx + len(suffix):].strip()
 
                 if keyword not in _HEADER_KEYWORDS:
@@ -293,7 +293,7 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
     navigation, fermata, key change).  Only the key change is extracted here;
     the rest are left for _parse_single_token to handle.
 
-    Format: [(expr)]... [(KEY)]old_note/new_note [remaining_notes]
+    Format: [(expr)]... [(key)]old_note/new_note [remaining_notes]
     Example: "(f)(CODA)(Ab)r/s,.t,"
              → key_change="Ab", mod="r/s,", remaining="(f)(CODA)s,.t,"
 

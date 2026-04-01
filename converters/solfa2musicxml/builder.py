@@ -6,9 +6,9 @@ from music21 import (
     duration, metadata, tie, repeat, expressions, dynamics, chord,
     articulations,
 )
-from solfa_spec import spec
+from ..shared import spec
 from music21 import instrument as m21instrument
-from s2m_solfa_pitch import solfa_to_pitch, resolve_modulation
+from .solfa_pitch import solfa_to_pitch, resolve_modulation
 
 _INSTRUMENT_CLASS_MAP = {
     "Soprano": m21instrument.Soprano,
@@ -31,7 +31,7 @@ def _build_voice_config() -> dict:
     return result
 
 _VOICE_CONFIG = _build_voice_config()
-from s2m_duration import assign_durations, consolidate_holds
+from .duration import assign_durations, consolidate_holds
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -210,18 +210,18 @@ def build_score(parsed: dict) -> stream.Score:
 
     # ── Metadata ──
     md = metadata.Metadata()
-    md.title = props.get("TITLE", spec["defaults"]["TITLE"])
-    md.composer = props.get("COMPOSER", spec["defaults"]["COMPOSER"])
-    if props.get("AUTHOR"):
-        md.lyricist = props["AUTHOR"]
+    md.title = props.get("title", spec["defaults"]["title"])
+    md.composer = props.get("composer", spec["defaults"]["composer"])
+    if props.get("author"):
+        md.lyricist = props["author"]
     md.date = date.today().isoformat()
     md.copyright = f"Generated on {date.today().strftime('%Y-%m-%d')}"
     score.metadata = md
 
-    time_sig_str = props.get("TIMESIG", spec["defaults"]["TIMESIG"])
-    current_key = props.get("KEY", spec["defaults"]["KEY"])
-    base_octave = props.get("OCTAVE", spec["defaults"]["OCTAVE"])
-    bpm = props.get("TEMPO", spec["defaults"]["TEMPO"])
+    time_sig_str = props.get("timesig", spec["defaults"]["timesig"])
+    current_key = props.get("key", spec["defaults"]["key"])
+    base_octave = props.get("octave", spec["defaults"]["octave"])
+    bpm = props.get("tempo", spec["defaults"]["tempo"])
 
     ts_num, ts_den = map(int, time_sig_str.split("/"))
     measure_ql = ts_num * (4.0 / ts_den)
@@ -230,7 +230,7 @@ def build_score(parsed: dict) -> stream.Score:
     # If some voices have fewer measures (partial blocks), pad with
     # whole-measure rests so all voices have the same total measures.
     if voices:
-        from s2m_models import NoteEvent
+        from .models import NoteEvent
         max_measures = max(len(m) for m in voices.values())
         for voice_label in voices:
             while len(voices[voice_label]) < max_measures:

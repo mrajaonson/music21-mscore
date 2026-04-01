@@ -6,7 +6,7 @@ Loads solfadoc-spec.yaml and exposes it as a plain dict.
 This is the single source of truth for all notation constants in Python.
 
 Usage:
-    from solfa_spec import spec
+    from shared import spec
 
     spec["notes"]["solfa_to_semitone"]    # dict: {"d": 0, "r": 2, ...}
     spec["rhythm"]["soft_barline"]        # dict with char, rules etc.
@@ -41,7 +41,7 @@ def _find_spec_file() -> Path:
       2. Package resources (installed via pip)
     """
     # 1. Repository root (development / editable install)
-    repo_root = Path(__file__).parent.parent / "solfadoc-spec.yaml"
+    repo_root = Path(__file__).parent.parent.parent / "solfadoc-spec.yaml"
     if repo_root.exists():
         return repo_root
 

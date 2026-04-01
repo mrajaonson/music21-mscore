@@ -1,11 +1,11 @@
-TITLE Joyful, joyful, we adore Thee
-AUTHOR Van Dyke, Henry, 1852-1933
-COMPOSER Beethoven, Ludwig van, 1770-1827
-KEY G
-TEMPO
-TIMESIG 4/4
-METER 8.7.8.7.D
-COMMENTS
+:title: Joyful, joyful, we adore Thee
+:author: Van Dyke, Henry, 1852-1933
+:composer: Beethoven, Ludwig van, 1770-1827
+:key: G
+:tempo:
+:timesig: 4/4
+:meter: 8.7.8.7.D
+:comment:
 
 | m : m : f : s | s : f : m : r | d : d : r : m | m : –.r: r : – |
 | s, : s, : s, : s, | s, : l, : s, : s, | s, : s, : f, : m, | s, : –.s, : s, : – |

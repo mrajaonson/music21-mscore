@@ -1,7 +1,7 @@
 import re
 from typing import List, Optional
-from solfa_spec import spec
-from s2p_data_structures import (Song, VoiceLine, Measure, Note, NoteType, Block, LyricLine, Expression, Beat)
+from ..shared import spec
+from .data_structures import (Song, VoiceLine, Measure, Note, NoteType, Block, LyricLine, Expression, Beat)
 
 class TonicSolfaParser:
     """Parser for tonic solfa notation files"""
@@ -16,7 +16,7 @@ class TonicSolfaParser:
 
         # Initialize song with defaults
         for key, value in spec["defaults"].items():
-            if key == "TIMESIG":
+            if key == "timesig":
                 self.song.time_sig = (4, 4)
             elif hasattr(self.song, key.lower()):
                 setattr(self.song, key.lower(), value)
@@ -54,7 +54,7 @@ class TonicSolfaParser:
         # Strip leading prefix, then split on suffix to get prop name and value
         rest = line[len(prefix):]
         idx = rest.index(suffix)
-        prop = rest[:idx].strip().upper()
+        prop = rest[:idx].strip()
         value = rest[idx + len(suffix):].strip()
 
         # Skip unknown property names
@@ -72,7 +72,7 @@ class TonicSolfaParser:
                 setattr(self.song, attr, int(value))
             except ValueError:
                 pass
-        elif prop == "TIMESIG":
+        elif prop == "timesig":
             if "/" in value:
                 num, denom = value.split("/")
                 try:
@@ -438,7 +438,6 @@ class TonicSolfaParser:
             return Expression(type="text", value=spec["dynamics"]["text_expressions"][content])
         else:
             # Check for numbered navigation markers (DS1, DS2, S1, S2, DSF1, etc.)
-            import re
             # Match patterns like DS1, DS2, S1, S2, DSF1, DSC1, etc.
             match = re.match(r'^(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)(\d+)$', content)
             if match:
@@ -463,17 +462,6 @@ class TonicSolfaParser:
         if not line:
             return None
 
-        # Patterns to match:
-        # "S text..."      - verse 1, soprano
-        # "SA text..."     - verse 1, soprano + alto
-        # "SAT text..."    - verse 1, soprano + alto + tenor
-        # "1SA text..."    - verse 1, soprano + alto
-        # "1S1S2 text..."  - verse 1, soprano 1 + soprano 2
-        # "RSA text..."    - refrain, soprano + alto
-        # "1 text..."      - verse 1, all voices
-        # "R text..."      - refrain, all voices
-        # "text..."        - no prefix (verse 1, all voices)
-
         verse = "1"
         voices = list(available_voices) if available_voices else spec["voices"]["default_order"][:]
         display_prefix = ""
@@ -487,7 +475,6 @@ class TonicSolfaParser:
             parsed = False
 
             # Check for verse+voices (e.g. "1SA", "2B", "RS1S2", "1S1S2")
-            # or verse only (e.g. "1", "2") or refrain (e.g. "R")
             v_part = ""
             voice_part = ""
             if prefix.startswith('R'):

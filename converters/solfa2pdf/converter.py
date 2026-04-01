@@ -7,8 +7,8 @@ with aligned lyrics below each voice part.
 """
 
 import sys
-from s2p_solfa_pdf_renderer import TonicSolfaPDFRenderer
-from s2p_solfa_parser import TonicSolfaParser
+from .solfa_pdf_renderer import TonicSolfaPDFRenderer
+from .solfa_parser import TonicSolfaParser
 
 # =============================================================================
 # MAIN FUNCTION
@@ -34,7 +34,7 @@ def convert_tonic_solfa_to_pdf(input_path: str, output_path: str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python tonic_solfa_to_pdf.py <input.txt> [output.pdf]")
+        print("Usage: python -m converters.solfa2pdf.converter <input.txt> [output.pdf]")
         sys.exit(1)
 
     input_file = sys.argv[1]

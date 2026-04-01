@@ -2,7 +2,7 @@ from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm, cm
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
-from solfa_spec import spec
+from ..shared import spec
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
@@ -16,10 +16,10 @@ def _resolve_music_font() -> str:
         return fallback
 
 MUSIC_SYMBOL_FONT = _resolve_music_font()
-from s2p_data_structures import (Song)
+from .data_structures import (Song)
 from datetime import datetime
 from typing import List, Dict, Tuple
-from s2p_data_structures import (NoteType, Measure, Beat, Note)
+from .data_structures import (NoteType, Measure, Beat, Note)
 
 class TonicSolfaPDFRenderer:
     """Renders a parsed Song to PDF in traditional hymnal style"""
