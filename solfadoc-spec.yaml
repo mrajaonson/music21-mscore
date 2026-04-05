@@ -27,7 +27,10 @@ defaults:
   timesig:  "4/4"
   meter:    null
   octave:   4         # base octave for unmarked notes (middle-C octave)
-  comments: ""
+  comment: ""
+  date:    null
+  transcription: null
+  copyright: null
 
 
 # -----------------------------------------------------------------------------
@@ -43,7 +46,7 @@ header:
   prop_suffix: ":"
 
   # Property names by parse type
-  string_props:  [title, author, composer, key, meter, comments]
+  string_props:  [title, author, composer, key, meter, comment, date, transcription, copyright]
   int_props:     [tempo, octave]
   special_props: [timesig]   # parsed as "N/D" → two integers
 
@@ -150,7 +153,6 @@ rhythm:
   subbeat_separator: "."   # splits a beat into sub-beat subdivisions
   hold:             "-"    # extends the previous note for that slot
   rest_explicit:    "*"    # explicit 1-beat rest
-  rest_double:      "**"   # explicit 2-beat rest
   # empty beat slot (blank between separators) = implicit rest
 
   # Whole-measure rest rule:
@@ -323,6 +325,14 @@ lyrics:
   rest_skip:      "*"   # skip one note position (rest or silent note)
   melisma_prefix: "_"   # on a NOTE: melisma — does not consume a lyric syllable
 
+  # Mute letters — silent letters shown for visual reference
+  # Delimited by double underscores: ev__e__ry → "every" with "e" in italic
+  # No effect on note assignment — purely visual.
+  # PDF: mute portion rendered in italic.
+  # MusicXML: delimiters stripped, rendered as plain text.
+  mute_open:  "__"
+  mute_close: "__"
+
   # Refrain designator
   refrain_token: "R"
 
@@ -353,10 +363,9 @@ lyrics:
 # -----------------------------------------------------------------------------
 modulation:
   separator: "/"          # old_note/new_note
-  key_hint_keyword: "Key" # optional inline hint: (Key Ab) before old/new token
   scope: "voice"          # modulation marker is per voice line
+  # Optional key hint: (Ab)r/s — parenthesized valid key before the modulation.
   # New key can always be inferred from the old/new solfa relationship.
-  # (Key X) is optional — used when the author wants explicit clarity.
   # In practice all voices modulate to the same key at the same point.
 
 
@@ -383,6 +392,15 @@ navigation:
     TC:    "To Coda"
     CODA:  "\U0001D10C"   # renders as coda symbol 𝄌
     SEGNO: "\U0001D10B"   # renders as segno symbol 𝄋
+
+  # Numbered variants — for pieces with multiple segnos or codas.
+  # Append a digit to any marker: DS1 → "D.S.1" (jumps to SEGNO1), etc.
+  # The number links the jump to its target:
+  #   DS<N> / DSF<N> / DSC<N>  →  jump back to SEGNO<N>
+  #   TC<N>                    →  jump forward to CODA<N>
+  # Display text appends the number: DS2 → "D.S.2", TC1 → "To Coda 1"
+  # Numbered and unnumbered markers are independent (DS ≠ DS1).
+  numbered_markers_pattern: "(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)<N>"
 
 
 # -----------------------------------------------------------------------------

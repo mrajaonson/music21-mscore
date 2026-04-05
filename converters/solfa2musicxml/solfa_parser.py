@@ -148,9 +148,7 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     if s[0] == spec["rhythm"]["hold"]:
         return NoteEvent(is_hold=True, raw="-", dynamic=dyn, fermata=has_fermata, navigation=nav), s[1:]
 
-    # --- rest (* or **) ---
-    if s.startswith(spec["rhythm"]["rest_double"]):
-        return NoteEvent(is_rest=True, raw="**", dynamic=dyn, fermata=has_fermata, navigation=nav), s[2:]
+    # --- rest (*) ---
     if s.startswith(spec["rhythm"]["rest_explicit"]):
         return NoteEvent(is_rest=True, raw="*", dynamic=dyn, fermata=has_fermata, navigation=nav), s[1:]
 
@@ -285,7 +283,7 @@ def _split_measures(raw: str) -> list[str]:
 
 def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
     """
-    Check for a modulation marker like r/s, inside a beat.
+    Check for a modulation marker like r/s inside a beat.
     The right side token is both the modulation target AND the first note
     to play in the new key.
 
@@ -293,7 +291,7 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
     navigation, fermata, key change).  Only the key change is extracted here;
     the rest are left for _parse_single_token to handle.
 
-    Format: [(expr)]... [(key)]old_note/new_note [remaining_notes]
+    Format: [(expr)]... [(KEY)]old_note/new_note [remaining_notes]
     Example: "(f)(CODA)(Ab)r/s,.t,"
              → key_change="Ab", mod="r/s,", remaining="(f)(CODA)s,.t,"
 
@@ -306,7 +304,7 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
     # Collect non-key parens to re-prepend them to the remaining beat.
     key_change = None
     prefix_parens = []  # non-key parens to preserve
-    work_str = beat_str
+    work_str = beat_str.strip()
     while work_str.startswith('('):
         close_idx = work_str.find(')')
         if close_idx < 0:
@@ -514,23 +512,30 @@ def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
 
         # If prefix wasn't recognized, treat entire line as lyrics (stripped unchanged)
 
-    # Split into syllables with syllabic type for MusicXML hyphenation
+    # Split into syllables using MusicXML syllabic types for hyphen rendering
+    # "A-ma-zing" → begin/middle/end, "ni-" (trailing) → begin only (no extra syllable)
     syllables = []
     words = stripped.split()
     for word in words:
-        parts = word.split(spec["lyrics"]["hyphen"])
-        if len(parts) == 1:
-            part = parts[0].replace(spec["lyrics"]["join"], " ")
-            syllables.append((part, "single"))
-        else:
-            for i, part in enumerate(parts):
-                part = part.replace(spec["lyrics"]["join"], " ")
-                if i == 0:
-                    syllables.append((part, "begin"))
-                elif i == len(parts) - 1:
-                    syllables.append((part, "end"))
-                else:
-                    syllables.append((part, "middle"))
+        parts = [p for p in word.split(spec["lyrics"]["hyphen"]) if p]
+        if not parts:
+            continue
+        for j, part in enumerate(parts):
+            part = part.replace(spec["lyrics"]["join"], " ")
+            has_next = j < len(parts) - 1
+            had_prev = j > 0
+            trailing_hyphen = word.endswith(spec["lyrics"]["hyphen"]) and not has_next
+            if len(parts) == 1 and not trailing_hyphen:
+                syllables.append((part, "single"))
+            elif not had_prev and has_next:
+                syllables.append((part, "begin"))
+            elif had_prev and has_next:
+                syllables.append((part, "middle"))
+            elif had_prev and not has_next and not trailing_hyphen:
+                syllables.append((part, "end"))
+            else:
+                # trailing hyphen (e.g. "ni-"): begin with no closing end
+                syllables.append((part, "begin"))
 
     return voices, verse_id, syllables
 

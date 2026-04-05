@@ -327,10 +327,6 @@ class TonicSolfaParser:
             note = Note(type=NoteType.REST, expressions=expressions)
             return [note]
 
-        if group_str == spec["rhythm"]["rest_double"]:
-            # Two-beat rest - return two rests
-            return [Note(type=NoteType.REST), Note(type=NoteType.REST)]
-
         # Check for chord
         if group_str.startswith(spec["chords"]["open"]) and spec["chords"]["close"] in group_str:
             chord_end = group_str.index(spec["chords"]["close"])
@@ -552,8 +548,9 @@ class TonicSolfaParser:
         """Parse lyrics text into syllables"""
         syllables = []
 
-        # Replace joined syllables (^) with a special marker
-        text = text.replace(spec["lyrics"]["join"], " ")
+        # Replace join (^) with placeholder, split, then restore as space
+        _JOIN_PLACEHOLDER = "\x00"
+        text = text.replace(spec["lyrics"]["join"], _JOIN_PLACEHOLDER)
 
         # Split by spaces and hyphens
         words = text.split()
@@ -563,6 +560,8 @@ class TonicSolfaParser:
                 syllables.append("*")
             elif spec["lyrics"]["hyphen"] in word:
                 # Split hyphenated word
+                # Trailing hyphen (e.g. "ma-") indicates word continues on next line
+                # and is rendered as "ma-" without consuming an extra note
                 parts = word.split(spec["lyrics"]["hyphen"])
                 for i, part in enumerate(parts):
                     if part:
@@ -573,4 +572,5 @@ class TonicSolfaParser:
             else:
                 syllables.append(word)
 
-        return syllables
+        # Restore join placeholders to spaces for display
+        return [s.replace(_JOIN_PLACEHOLDER, " ") for s in syllables]

@@ -145,9 +145,9 @@ class TonicSolfaPDFRenderer:
             self.y_position -= self.subtitle_font_size + 3
 
         # Comments (right-aligned, under composer)
-        if self.song.comments:
+        if self.song.comment:
             self.c.setFont("Helvetica-Oblique", self.small_font_size)
-            self.c.drawRightString(self.page_width - self.margin_left, self.y_position, self.song.comments)
+            self.c.drawRightString(self.page_width - self.margin_left, self.y_position, self.song.comment)
             self.y_position -= self.small_font_size + 3
 
         # Key, Tempo, Time Signature line
@@ -199,10 +199,22 @@ class TonicSolfaPDFRenderer:
                 })
                 measure_offset += num_measures
 
-        # Draw measures in groups (lines)
+        # Build list of block boundaries (start indices)
+        block_boundaries = set()
+        for bl in block_lyrics:
+            block_boundaries.add(bl['start'])
+
+        # Draw measures in groups (lines), respecting block boundaries
         measure_idx = 0
         while measure_idx < total_measures:
             end_idx = min(measure_idx + self.measures_per_line, total_measures)
+
+            # Don't cross a block boundary: if a new block starts within this line,
+            # stop at that boundary instead
+            for boundary in sorted(block_boundaries):
+                if measure_idx < boundary < end_idx:
+                    end_idx = boundary
+                    break
 
             # Skip lines of entirely empty measures at the end
             all_empty = True
@@ -492,16 +504,40 @@ class TonicSolfaPDFRenderer:
 
     def _draw_above_staff_line(self, items: List[Dict], start_y: float):
         """Draw all above-staff items on ONE line. Each item's texts are joined by spaces
-        and centered over the note's center_x."""
+        and centered over the note's center_x, with overlap prevention."""
         self.c.setFillColor(colors.black)
         draw_y = start_y + 2
+        min_gap = 4  # minimum pixel gap between above-staff items
+
+        # Pre-compute widths and initial draw_x for each item
+        music_symbols = {spec["navigation"]["coda_symbol"], spec["navigation"]["segno_symbol"], spec["navigation"]["fermata_symbol"]}
+        for item in items:
+            total_width = 0
+            for i, text in enumerate(item['texts']):
+                if i > 0:
+                    total_width += self.c.stringWidth("  ", "Helvetica-Bold", self.small_font_size + 1)
+                contains_music = any(sym in text for sym in music_symbols)
+                if contains_music:
+                    idx = len(text) - 1
+                    while idx >= 0 and text[idx].isdigit():
+                        idx -= 1
+                    total_width += self.c.stringWidth(text[:idx + 1], MUSIC_SYMBOL_FONT, self.small_font_size + 6)
+                    if text[idx + 1:]:
+                        total_width += self.c.stringWidth(text[idx + 1:], "Helvetica-Bold", self.small_font_size)
+                else:
+                    total_width += self.c.stringWidth(text, "Helvetica-Bold", self.small_font_size + 1)
+            item['_width'] = total_width
+            item['_draw_x'] = item['center_x'] - total_width / 2
+
+        # Nudge to prevent overlap
+        for i in range(1, len(items)):
+            prev_end = items[i - 1]['_draw_x'] + items[i - 1]['_width']
+            if items[i]['_draw_x'] < prev_end + min_gap:
+                items[i]['_draw_x'] = prev_end + min_gap
 
         for item in items:
-            center_x = item['center_x']
-            texts = item['texts']
-
-            # Build combined display, handling music symbols specially
-            self._draw_combined_above_text(texts, center_x, draw_y)
+            # Draw at computed _draw_x instead of centered
+            self._draw_above_text_at(item['texts'], item['_draw_x'], draw_y)
 
     def _draw_combined_above_text(self, texts: List[str], center_x: float, draw_y: float):
         """Draw a list of above-staff text items centered over center_x, separated by spaces.
@@ -512,7 +548,7 @@ class TonicSolfaPDFRenderer:
 
         for i, text in enumerate(texts):
             if i > 0:
-                segments.append((" ", "Helvetica-Bold", self.small_font_size + 1))
+                segments.append(("  ", "Helvetica-Bold", self.small_font_size + 1))
 
             # Check if text contains music symbols
             contains_music = any(sym in text for sym in music_symbols)
@@ -526,7 +562,7 @@ class TonicSolfaPDFRenderer:
 
                 segments.append((symbol_part, MUSIC_SYMBOL_FONT, self.small_font_size + 6))
                 if number_suffix:
-                    segments.append((number_suffix, "Helvetica-Bold", self.small_font_size + 2))
+                    segments.append((number_suffix, "Helvetica-Bold", self.small_font_size))
             else:
                 segments.append((text, "Helvetica-Bold", self.small_font_size + 1))
 
@@ -541,6 +577,33 @@ class TonicSolfaPDFRenderer:
             self.c.setFont(seg_font, seg_size)
             self.c.drawString(draw_x, draw_y, seg_text)
             draw_x += self.c.stringWidth(seg_text, seg_font, seg_size)
+
+    def _draw_above_text_at(self, texts: List[str], draw_x: float, draw_y: float):
+        """Draw above-staff text items starting at draw_x (no centering)."""
+        music_symbols = {spec["navigation"]["coda_symbol"], spec["navigation"]["segno_symbol"], spec["navigation"]["fermata_symbol"]}
+        for i, text in enumerate(texts):
+            if i > 0:
+                self.c.setFont("Helvetica-Bold", self.small_font_size + 1)
+                self.c.drawString(draw_x, draw_y, "  ")
+                draw_x += self.c.stringWidth("  ", "Helvetica-Bold", self.small_font_size + 1)
+            contains_music = any(sym in text for sym in music_symbols)
+            if contains_music:
+                idx = len(text) - 1
+                while idx >= 0 and text[idx].isdigit():
+                    idx -= 1
+                symbol_part = text[:idx + 1]
+                number_suffix = text[idx + 1:]
+                self.c.setFont(MUSIC_SYMBOL_FONT, self.small_font_size + 6)
+                self.c.drawString(draw_x, draw_y, symbol_part)
+                draw_x += self.c.stringWidth(symbol_part, MUSIC_SYMBOL_FONT, self.small_font_size + 6)
+                if number_suffix:
+                    self.c.setFont("Helvetica-Bold", self.small_font_size)
+                    self.c.drawString(draw_x, draw_y, number_suffix)
+                    draw_x += self.c.stringWidth(number_suffix, "Helvetica-Bold", self.small_font_size)
+            else:
+                self.c.setFont("Helvetica-Bold", self.small_font_size + 1)
+                self.c.drawString(draw_x, draw_y, text)
+                draw_x += self.c.stringWidth(text, "Helvetica-Bold", self.small_font_size + 1)
 
     # ─────────────────────────────────────────────────────────────────
     # Lyric organization helpers
@@ -630,15 +693,19 @@ class TonicSolfaPDFRenderer:
                     self.c.drawCentredString(sep_x, text_y, ":")
 
         # Build melisma underline ranges: include the note before the melisma chain
+        # and any holds between the note and the melisma
         melisma_ranges = []
         i = 0
         while i < len(all_note_positions):
             pos = all_note_positions[i]
             if pos['is_melisma'] and pos['is_note']:
-                # Find the start: include preceding note
-                start_x_m = pos['x']
-                if i > 0 and all_note_positions[i - 1]['is_note']:
-                    start_x_m = all_note_positions[i - 1]['x']
+                # Find the start: look back past holds to find the preceding real note
+                start_x_m = pos['x'] + pos.get('mod_offset', 0)
+                j = i - 1
+                while j >= 0 and not all_note_positions[j]['is_note']:
+                    j -= 1
+                if j >= 0 and all_note_positions[j]['is_note']:
+                    start_x_m = all_note_positions[j]['x'] + all_note_positions[j].get('mod_offset', 0)
                 # Extend through consecutive melisma notes
                 end_x_m = pos['end_x']
                 while i < len(all_note_positions) and all_note_positions[i]['is_melisma'] and all_note_positions[i]['is_note']:
@@ -670,11 +737,17 @@ class TonicSolfaPDFRenderer:
             first_text, first_mods = self._notes_to_display_text(beat.first_half)
             second_text, second_mods = self._notes_to_display_text(beat.second_half)
 
+            # Measure widths to pack tightly around the dot
+            first_text_width = self._calc_text_width_with_mods(first_text, first_mods) if first_text else 0
+            second_text_width = self._calc_text_width_with_mods(second_text, second_mods) if second_text else 0
+            dot_width = self.c.stringWidth(".", self.notation_font, self.note_font_size)
+            total_content = first_text_width + dot_width + second_text_width
+            # Center the whole group (first_text + dot + second_text) within the beat width
+            content_x = x + (width - total_content) / 2
+
             first_draw_x = None
-            first_text_width = 0
             if first_text:
-                first_text_width = self._calc_text_width_with_mods(first_text, first_mods)
-                first_draw_x = x + (half_width - first_text_width) / 2
+                first_draw_x = content_x
                 self._draw_text_with_modulation(first_text, first_mods, first_draw_x, text_y, x, above_y)
                 for mod in first_mods:
                     if mod.get('key_change'):
@@ -683,15 +756,13 @@ class TonicSolfaPDFRenderer:
             # Per-note positions for first half
             self._add_note_positions(beat.first_half, x, half_width, first_draw_x, first_text_width, result)
 
-            dot_x = x + half_width - 1
+            dot_x = content_x + first_text_width
             self.c.setFont(self.notation_font, self.note_font_size)
             self.c.drawString(dot_x, text_y, ".")
 
             second_draw_x = None
-            second_text_width = 0
             if second_text:
-                second_text_width = self._calc_text_width_with_mods(second_text, second_mods)
-                second_draw_x = x + half_width + (half_width - second_text_width) / 2
+                second_draw_x = dot_x + dot_width
                 self._draw_text_with_modulation(second_text, second_mods, second_draw_x, text_y, x + half_width,
                                                 above_y)
                 for mod in second_mods:
@@ -735,11 +806,17 @@ class TonicSolfaPDFRenderer:
                 per_note_w = text_width / num_notes
                 note_x = draw_x + i * per_note_w
                 note_end_x = note_x + per_note_w
+            # For modulations, track where the main note starts (after superscript)
+            mod_offset = 0
+            if note.type == NoteType.MODULATION and note.modulation_from and draw_x is not None:
+                superscript_size = self.note_font_size - 1
+                mod_offset = self.c.stringWidth(note.modulation_from, self.notation_font, superscript_size)
             result['note_positions'].append({
                 'x': note_x,
                 'end_x': note_end_x,
                 'is_melisma': note.is_melisma,
-                'is_note': is_real_note
+                'is_note': is_real_note,
+                'mod_offset': mod_offset
             })
 
     def _calc_text_width_with_mods(self, text: str, modulations: List[Dict]) -> float:
@@ -869,40 +946,44 @@ class TonicSolfaPDFRenderer:
                 if beat.is_subdivided:
                     first_half_notes = beat.first_half
                     second_half_notes = beat.second_half
-                    half_width = beat_width / 2
 
+                    # Compute tight layout matching note rendering
+                    first_text, first_mods = self._notes_to_display_text(first_half_notes)
+                    second_text, second_mods = self._notes_to_display_text(second_half_notes)
+                    first_tw = self._calc_text_width_with_mods(first_text, first_mods) if first_text else 0
+                    second_tw = self._calc_text_width_with_mods(second_text, second_mods) if second_text else 0
+                    dot_w = self.c.stringWidth(".", self.notation_font, self.note_font_size)
+                    total_content = first_tw + dot_w + second_tw
+
+                    rel_m = m_idx - start_idx
+                    beat_x = start_x + label_width + rel_m * measure_width + beat_idx * beat_width
+                    content_x = beat_x + (beat_width - total_content) / 2
+
+                    # First half: notes packed from content_x over first_tw
+                    num_first = len(first_half_notes)
+                    per_note_first = first_tw / num_first if num_first > 0 and first_tw > 0 else beat_width / 2
                     for note_idx, note in enumerate(first_half_notes):
                         if (note.type == NoteType.NOTE and not note.is_melisma) or note.type == NoteType.MODULATION:
                             if syllable_idx < len(lyric.syllables):
                                 syl = lyric.syllables[syllable_idx]
                                 if syl != "*":
-                                    rel_m = m_idx - start_idx
-                                    note_width = half_width / len(first_half_notes) if first_half_notes else half_width
-                                    note_center_x = (start_x + label_width +
-                                                     rel_m * measure_width +
-                                                     beat_idx * beat_width +
-                                                     note_idx * note_width +
-                                                     note_width / 2)
+                                    note_center_x = content_x + note_idx * per_note_first + per_note_first / 2
                                     syllable_positions.append({
                                         'text': syl,
                                         'center_x': note_center_x
                                     })
                                 syllable_idx += 1
 
+                    # Second half: notes packed from after the dot
+                    second_x = content_x + first_tw + dot_w
+                    num_second = len(second_half_notes)
+                    per_note_second = second_tw / num_second if num_second > 0 and second_tw > 0 else beat_width / 2
                     for note_idx, note in enumerate(second_half_notes):
                         if (note.type == NoteType.NOTE and not note.is_melisma) or note.type == NoteType.MODULATION:
                             if syllable_idx < len(lyric.syllables):
                                 syl = lyric.syllables[syllable_idx]
                                 if syl != "*":
-                                    rel_m = m_idx - start_idx
-                                    note_width = half_width / len(
-                                        second_half_notes) if second_half_notes else half_width
-                                    note_center_x = (start_x + label_width +
-                                                     rel_m * measure_width +
-                                                     beat_idx * beat_width +
-                                                     half_width +
-                                                     note_idx * note_width +
-                                                     note_width / 2)
+                                    note_center_x = second_x + note_idx * per_note_second + per_note_second / 2
                                     syllable_positions.append({
                                         'text': syl,
                                         'center_x': note_center_x
@@ -931,12 +1012,73 @@ class TonicSolfaPDFRenderer:
             return
 
         self.c.setFont(self.notation_font, self.lyric_font_size)
+        italic_font = self.notation_font.replace("-Roman", "-Italic").replace("-Bold", "-BoldItalic")
+        if italic_font == self.notation_font and "Italic" not in italic_font:
+            italic_font = self.notation_font + "-Italic"  # fallback
+        mute_delim = spec["lyrics"]["mute_open"]
 
+        min_gap = 2  # minimum pixel gap between syllables
+
+        # Compute draw_x for each syllable, then nudge to avoid overlap
         for syl_info in syllable_positions:
             text = syl_info['text']
-            center_x = syl_info['center_x']
+            tw = self._lyric_text_width(text, mute_delim, italic_font)
+            syl_info['draw_x'] = syl_info['center_x'] - tw / 2
+            syl_info['width'] = tw
 
-            text_width = self.c.stringWidth(text, self.notation_font, self.lyric_font_size)
-            draw_x = center_x - text_width / 2
+        for i in range(1, len(syllable_positions)):
+            prev = syllable_positions[i - 1]
+            curr = syllable_positions[i]
+            prev_end = prev['draw_x'] + prev['width']
+            if curr['draw_x'] < prev_end + min_gap:
+                curr['draw_x'] = prev_end + min_gap
 
-            self.c.drawString(draw_x, lyric_y, text)
+        for syl_info in syllable_positions:
+            self._draw_lyric_text(syl_info['draw_x'], lyric_y, syl_info['text'],
+                                  mute_delim, italic_font)
+
+    def _lyric_text_width(self, text: str, mute_delim: str, italic_font: str) -> float:
+        """Compute total width of a lyric syllable, accounting for mute delimiters."""
+        if mute_delim not in text:
+            return self.c.stringWidth(text, self.notation_font, self.lyric_font_size)
+        total = 0.0
+        for segment in self._split_mute_segments(text, mute_delim):
+            font = italic_font if segment['mute'] else self.notation_font
+            total += self.c.stringWidth(segment['text'], font, self.lyric_font_size)
+        return total
+
+    def _draw_lyric_text(self, x: float, y: float, text: str,
+                         mute_delim: str, italic_font: str):
+        """Draw a lyric syllable, rendering mute portions in italic."""
+        if mute_delim not in text:
+            self.c.drawString(x, y, text)
+            return
+        cx = x
+        for segment in self._split_mute_segments(text, mute_delim):
+            font = italic_font if segment['mute'] else self.notation_font
+            self.c.setFont(font, self.lyric_font_size)
+            self.c.drawString(cx, y, segment['text'])
+            cx += self.c.stringWidth(segment['text'], font, self.lyric_font_size)
+        self.c.setFont(self.notation_font, self.lyric_font_size)
+
+    @staticmethod
+    def _split_mute_segments(text: str, delim: str) -> list:
+        """Split text into normal and mute segments.
+
+        e.g. 'ev__e__ry' → [{'text':'ev','mute':False}, {'text':'e','mute':True}, {'text':'ry','mute':False}]
+        """
+        segments = []
+        while delim in text:
+            before, _, rest = text.partition(delim)
+            if before:
+                segments.append({'text': before, 'mute': False})
+            if delim in rest:
+                mute_part, _, text = rest.partition(delim)
+                if mute_part:
+                    segments.append({'text': mute_part, 'mute': True})
+            else:
+                text = rest
+                break
+        if text:
+            segments.append({'text': text, 'mute': False})
+        return segments

@@ -65,9 +65,21 @@ def _format_headers(headers: dict) -> str:
     return "\n".join(lines)
 
 
-# Note token pattern: solfa syllables with optional modifiers
-# Matches tokens like: d, r', m,, f#, s.f, –, m.m, t.,l, s.f
-_NOTE_TOKEN = r"[drmfsltDRMFSLT–\-][#b',.drmfsltDRMFSLT–\-]*"
+# Build note token regex from spec (solfa_to_semitone + chromatic_sharp + chromatic_flat)
+def _build_note_token_re() -> str:
+    all_tokens = set()
+    all_tokens.update(spec["notes"]["solfa_to_semitone"].keys())
+    all_tokens.update(spec["notes"]["chromatic_sharp"].keys())
+    all_tokens.update(spec["notes"]["chromatic_flat"].keys())
+    # Sort longest first for greedy matching
+    sorted_tokens = sorted(all_tokens, key=len, reverse=True)
+    tokens_alt = "|".join(re.escape(t) for t in sorted_tokens)
+    # A note token: one of the solfa tokens, optionally followed by octave modifiers (' ,)
+    up = re.escape(spec["octave"]["up_char"])
+    down = re.escape(spec["octave"]["down_char"])
+    return rf"(?:{tokens_alt})[{up}{down}]*"
+
+_NOTE_TOKEN = _build_note_token_re()
 
 
 def _is_note_line(line: str) -> bool:
@@ -97,7 +109,7 @@ def _add_edge_barlines(line: str, beats_per_measure: int) -> str:
     # Check first segment (before first |)
     first = segments[0]
     if first.strip():
-        beat_count = first.count(':') + 1
+        beat_count = first.count(':') + first.count('!') + 1
         if beat_count == beats_per_measure:
             line = '| ' + line.lstrip()
 
@@ -107,7 +119,7 @@ def _add_edge_barlines(line: str, beats_per_measure: int) -> str:
     # Check last segment (after last |)
     last = segments[-1]
     if last.strip():
-        beat_count = last.count(':') + 1
+        beat_count = last.count(':') + last.count('!') + 1
         if beat_count == beats_per_measure:
             line = line.rstrip() + ' |'
 
@@ -161,17 +173,20 @@ def convert(input_path: str, output_path: str = None):
         headers["timesig"] = detected_timesig
         print(f"  Time signature detected: {detected_timesig}")
 
-    # 6. Replace all | with ! (soft barlines)
+    # 6. Replace en-dash with standard hyphen
+    extracted_text = extracted_text.replace('\u2013', '-')
+
+    # 7. Replace all | with ! (soft barlines)
     extracted_text = extracted_text.replace('|', '!')
 
-    # 7. Detect measure barlines from layout gaps
+    # 8. Detect measure barlines from layout gaps
     lines = extracted_text.split('\n')
     for i, line in enumerate(lines):
         if _is_note_line(line):
             lines[i] = _insert_measure_barlines(line)
     extracted_text = '\n'.join(lines)
 
-    # 8. Add barlines at start/end of note lines if timesig is known
+    # 9. Add barlines at start/end of note lines if timesig is known
     if detected_timesig:
         beats_per_measure = int(detected_timesig.split('/')[0])
         lines = extracted_text.split('\n')

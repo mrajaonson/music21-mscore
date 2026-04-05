@@ -6,9 +6,36 @@ from music21 import (
     duration, metadata, tie, repeat, expressions, dynamics, chord,
     articulations,
 )
+import re
 from ..shared import spec
 from music21 import instrument as m21instrument
 from .solfa_pitch import solfa_to_pitch, resolve_modulation
+
+_NUMBERED_NAV_RE = re.compile(
+    r'^(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)(\d+)$'
+)
+
+
+def _nav_base(nav_str: str) -> str:
+    """Return the base marker name, stripping any trailing number."""
+    m = _NUMBERED_NAV_RE.match(nav_str)
+    return m.group(1) if m else nav_str
+
+
+def _nav_number(nav_str: str) -> str | None:
+    """Return the trailing number of a numbered marker, or None."""
+    m = _NUMBERED_NAV_RE.match(nav_str)
+    return m.group(2) if m else None
+
+
+def _nav_display(nav_str: str) -> str:
+    """Return display text for a navigation marker (plain or numbered)."""
+    m = _NUMBERED_NAV_RE.match(nav_str)
+    if m:
+        base, num = m.group(1), m.group(2)
+        base_display = spec["navigation"]["markers"].get(base, base)
+        return f"{base_display} {num}"
+    return spec["navigation"]["markers"].get(nav_str, nav_str)
 
 _INSTRUMENT_CLASS_MAP = {
     "Soprano": m21instrument.Soprano,
@@ -145,26 +172,41 @@ def _apply_dynamic(measure: stream.Measure, dyn_str: str):
 
 def _apply_navigation(measure: stream.Measure, nav_str: str):
     """Append navigation marker above staff + barline (first voice only)."""
+    base = _nav_base(nav_str)
+
     # Segno and Coda signs go at the START of the measure (offset 0)
-    if nav_str == "SEGNO":
-        measure.insert(0, repeat.Segno())
+    num = _nav_number(nav_str)
+    if base == "SEGNO":
+        text = f"S.{num}" if num else "S."
+        te = expressions.TextExpression(text)
+        te.placement = "above"
+        te.style.fontStyle = "bold"
+        te.style.fontSize = 14
+        measure.insert(0, te)
         return
-    elif nav_str == "CODA":
-        measure.insert(0, repeat.Coda())
+    elif base == "CODA":
+        text = f"Coda {num}" if num else "Coda"
+        te = expressions.TextExpression(text)
+        te.placement = "above"
+        te.style.fontStyle = "bold"
+        te.style.fontSize = 14
+        measure.insert(0, te)
         return
-    elif nav_str == "TC":
-        marker = repeat.Coda()
-        marker.text = "To Coda"
-        # Place at last note offset
+    elif base == "TC":
+        text = f"To Coda {num}" if num else "To Coda"
+        te = expressions.TextExpression(text)
+        te.placement = "above"
+        te.style.fontStyle = "bold"
+        te.style.fontSize = 14
         last_offset = 0
         for el in measure.notesAndRests:
             if el.offset >= last_offset:
                 last_offset = el.offset
-        measure.insert(last_offset, marker)
+        measure.insert(last_offset, te)
         return
 
     # All others go above the last note (left of barline)
-    display = spec["navigation"]["markers"].get(nav_str, nav_str)
+    display = _nav_display(nav_str)
     te = expressions.TextExpression(display)
     te.placement = "above"
     te.style.fontStyle = "bold"
@@ -176,23 +218,24 @@ def _apply_navigation(measure: stream.Measure, nav_str: str):
             last_offset = el.offset
     measure.insert(last_offset, te)
     # DC, DCF, DCC → repeat end barline (double bar with dots)
-    if nav_str in ("DC", "DCF", "DCC"):
+    if base in ("DC", "DCF", "DCC"):
         measure.rightBarline = bar.Repeat(direction="end")
     # DS, DSF, DSC → double barline (no dots)
-    elif nav_str in ("DS", "DSF", "DSC"):
+    elif base in ("DS", "DSF", "DSC"):
         measure.rightBarline = bar.Barline("double")
-    # FINE (Fine) → final barline (thin + thick)
-    elif nav_str == "FINE":
+    # FINE → final barline (thin + thick)
+    elif base == "FINE":
         measure.rightBarline = bar.Barline("final")
 
 
 def _apply_navigation_barline_only(measure: stream.Measure, nav_str: str):
     """Apply only the barline (no text) for non-first voices."""
-    if nav_str in ("DC", "DCF", "DCC"):
+    base = _nav_base(nav_str)
+    if base in ("DC", "DCF", "DCC"):
         measure.rightBarline = bar.Repeat(direction="end")
-    elif nav_str in ("DS", "DSF", "DSC"):
+    elif base in ("DS", "DSF", "DSC"):
         measure.rightBarline = bar.Barline("double")
-    elif nav_str == "FINE":
+    elif base == "FINE":
         measure.rightBarline = bar.Barline("final")
 
 
@@ -373,6 +416,7 @@ def build_score(parsed: dict) -> stream.Score:
                             n.articulations.append(articulations.Staccato())
 
                         if not evt.is_melisma:
+                            mute_delim = spec["lyrics"]["mute_open"]
                             for lyric_num, (syls, cursor) in list(lyrics_cursors.items()):
                                 if cursor < len(syls):
                                     syl_text, syl_type = syls[cursor]
@@ -380,6 +424,8 @@ def build_score(parsed: dict) -> stream.Score:
                                         # * = skip, advance cursor but don't add lyric
                                         lyrics_cursors[lyric_num] = (syls, cursor + 1)
                                     else:
+                                        # Strip mute delimiters (purely visual in PDF)
+                                        syl_text = syl_text.replace(mute_delim, "")
                                         lyric_obj = note.Lyric(
                                             text=syl_text,
                                             number=lyric_num,

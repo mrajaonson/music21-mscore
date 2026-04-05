@@ -51,7 +51,10 @@ def reformat(input_path: str, output_path: str = None):
     result = []
 
     for line in lines:
-        if _is_note_line(line):
+        # Skip comment lines (optionally indented #)
+        if line.lstrip().startswith('#'):
+            pass
+        elif _is_note_line(line):
             line = _reformat_note_line(line)
         else:
             # Non-note lines: only collapse multiple spaces

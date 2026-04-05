@@ -126,5 +126,5 @@ class Song:
     time_sig: Tuple[int, int] = (4, 4)
     meter: str = ""
     octave: int = 4
-    comments: str = ""
+    comment: str = ""
     blocks: List[Block] = field(default_factory=list)
