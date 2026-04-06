@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Solfadoc",
+  "scopeName": "source.solfa",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#header" },
+    { "include": "#barline" },
+    { "include": "#note" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.solfa",
+      "match": "#.*$"
+    },
+    "header": {
+      "match": "^([A-Za-z_]+)\\s*:\\s*(.*)$",
+      "captures": {
+        "1": { "name": "keyword.other.header-key.solfa" },
+        "2": { "name": "string.unquoted.header-value.solfa" }
+      }
+    },
+    "barline": {
+      "name": "punctuation.separator.barline.solfa",
+      "match": "\\|"
+    },
+    "note": {
+      "name": "constant.numeric.note.solfa",
+      "match": "[drmfslt][oi]?['\\.]*"
+    }
+  }
+}

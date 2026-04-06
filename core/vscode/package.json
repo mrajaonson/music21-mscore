@@ -1,0 +1,35 @@
+{
+  "name": "solfadoc",
+  "displayName": "Solfadoc",
+  "description": "Syntax highlighting for solfadoc notation files",
+  "version": "0.1.0",
+  "publisher": "solfadoc",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "solfadoc",
+        "aliases": [
+          "Solfadoc",
+          "solfa"
+        ],
+        "extensions": [
+          ".solfa"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "solfadoc",
+        "scopeName": "source.solfa",
+        "path": "./syntaxes/solfa.tmLanguage.json"
+      }
+    ]
+  }
+}

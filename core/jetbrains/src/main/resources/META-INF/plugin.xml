@@ -1,0 +1,25 @@
+<idea-plugin>
+    <id>org.solfadoc.jetbrains</id>
+    <name>Solfadoc</name>
+    <vendor>solfadoc</vendor>
+    <description>Syntax highlighting for solfadoc notation files</description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType
+            name="Solfadoc"
+            implementationClass="org.solfadoc.SolfaFileType"
+            fieldName="INSTANCE"
+            language="Solfadoc"
+            extensions="solfa"/>
+
+        <lang.parserDefinition
+            language="Solfadoc"
+            implementationClass="org.solfadoc.parser.SolfaParserDefinition"/>
+
+        <lang.syntaxHighlighterFactory
+            language="Solfadoc"
+            implementationClass="org.solfadoc.highlight.SolfaSyntaxHighlighterFactory"/>
+    </extensions>
+</idea-plugin>
