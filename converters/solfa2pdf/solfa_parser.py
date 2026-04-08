@@ -30,7 +30,7 @@ class TonicSolfaParser:
                 continue
 
             # Skip comment lines
-            if stripped.startswith('#'):
+            if stripped.startswith('//'):
                 continue
 
             # Check if it's a header property line (:PROP_NAME: value)
@@ -58,14 +58,21 @@ class TonicSolfaParser:
         value = rest[idx + len(suffix):].strip()
 
         # Skip unknown property names
-        all_props = set(spec["header"]["string_props"]) | set(spec["header"]["int_props"]) | set(spec["header"]["special_props"])
+        all_props = set(spec["header"]["string_props"]) | set(spec["header"]["int_props"]) | set(spec["header"]["special_props"]) | set(spec["header"]["flag_props"])
         if prop not in all_props:
             return
 
-        if prop in set(spec["header"]["string_props"]):
-            attr = prop.lower()
-            if hasattr(self.song, attr):
-                setattr(self.song, attr, value)
+        if prop in set(spec["header"]["flag_props"]):
+            if hasattr(self.song, prop):
+                setattr(self.song, prop, True)
+        elif prop in set(spec["header"]["string_props"]):
+            if prop in ("author", "composer"):
+                attr = prop + "s"  # authors / composers
+                getattr(self.song, attr).append(value)
+            else:
+                attr = prop.lower()
+                if hasattr(self.song, attr):
+                    setattr(self.song, attr, value)
         elif prop in set(spec["header"]["int_props"]):
             attr = prop.lower()
             try:
@@ -100,7 +107,7 @@ class TonicSolfaParser:
                 continue
 
             # Skip comment lines
-            if stripped.startswith('#'):
+            if stripped.startswith('//'):
                 continue
 
             current_block_lines.append(stripped)

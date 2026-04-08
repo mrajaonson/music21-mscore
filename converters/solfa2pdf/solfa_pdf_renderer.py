@@ -94,16 +94,32 @@ class TonicSolfaPDFRenderer:
         pass  # Header info is in song header for first page
 
     def _draw_page_footer(self):
-        """Draw page footer with page number and generation date"""
-        self.c.setFont("Helvetica", self.small_font_size)
+        """Draw page footer with page number, copyright, and generation date"""
+        footer_y = self.margin_bottom - 8 * mm
+        copyright_font_size = self.small_font_size - 1
 
         # Page number
-        page_text = f"-{self.current_page}-"
-        self.c.drawCentredString(self.page_width / 2, self.margin_bottom - 8 * mm, page_text)
+        self.c.setFont("Helvetica", self.small_font_size)
+        self.c.drawCentredString(self.page_width / 2, footer_y, f"-{self.current_page}-")
 
-        # Generation date
-        date_text = f"Generated on {datetime.now().strftime('%Y-%m-%d')}"
-        self.c.drawRightString(self.page_width - self.margin_right, self.margin_bottom - 8 * mm, date_text)
+        # First page only: date (left), transcription (right), copyright (centered below page number)
+        if self.current_page == 1:
+            self.c.setFont("Helvetica", copyright_font_size)
+            if self.song.date:
+                self.c.drawString(self.margin_left, footer_y, self.song.date)
+            if self.song.transcription:
+                self.c.drawRightString(self.page_width - self.margin_right, footer_y, self.song.transcription)
+            if self.song.copyright:
+                self.c.drawCentredString(self.page_width / 2, footer_y - copyright_font_size - 1, self.song.copyright)
+
+        # Generation date (first page only, only if :gendate: flag is set) — centered, below copyright
+        if self.song.gendate and self.current_page == 1:
+            self.c.setFont("Helvetica", copyright_font_size)
+            date_text = f"Generated on {datetime.now().strftime('%Y-%m-%d')}"
+            gen_y = footer_y - copyright_font_size - 1
+            if self.song.copyright:
+                gen_y -= copyright_font_size + 1
+            self.c.drawCentredString(self.page_width / 2, gen_y, date_text)
 
     def _new_page(self):
         """Start a new page"""
@@ -112,11 +128,14 @@ class TonicSolfaPDFRenderer:
         self.current_page += 1
         self.y_position = self.page_height - self.margin_top
 
-        # Draw key/time signature reminder at top of new page
-        self.c.setFont("Helvetica", self.small_font_size)
-        reminder = f"{self.song.title}  —  Key: {self.song.key}    Time: {self.song.time_sig[0]}/{self.song.time_sig[1]}"
-        self.c.drawString(self.margin_left, self.y_position, reminder)
-        self.y_position -= 10
+        # Draw title reminder at top of subsequent pages — slightly larger, light grey
+        if self.song.title:
+            title_reminder_size = self.small_font_size + 2
+            self.c.setFont("Helvetica", title_reminder_size)
+            self.c.setFillColor(colors.Color(0.55, 0.55, 0.55))
+            self.c.drawString(self.margin_left, self.y_position, self.song.title)
+            self.c.setFillColor(colors.black)
+            self.y_position -= title_reminder_size + 4
 
     def _check_page_space(self, needed_height: float) -> bool:
         """Check if there's enough space on current page, start new page if not"""
@@ -133,15 +152,13 @@ class TonicSolfaPDFRenderer:
             self.c.drawCentredString(self.page_width / 2, self.y_position, self.song.title)
             self.y_position -= self.title_font_size + 3
 
-        # Author (left) and Composer (right) on the same line
-        has_author = bool(self.song.author)
-        has_composer = bool(self.song.composer)
-        if has_author or has_composer:
-            self.c.setFont("Helvetica-Oblique", self.subtitle_font_size)
-            if has_author:
-                self.c.drawString(self.margin_left, self.y_position, self.song.author)
-            if has_composer:
-                self.c.drawRightString(self.page_width - self.margin_left, self.y_position, self.song.composer)
+        # Authors (left) and Composers (right), one per line
+        self.c.setFont("Helvetica-Oblique", self.subtitle_font_size)
+        for i in range(max(len(self.song.authors), len(self.song.composers))):
+            if i < len(self.song.authors):
+                self.c.drawString(self.margin_left, self.y_position, self.song.authors[i])
+            if i < len(self.song.composers):
+                self.c.drawRightString(self.page_width - self.margin_left, self.y_position, self.song.composers[i])
             self.y_position -= self.subtitle_font_size + 3
 
         # Comments (right-aligned, under composer)
@@ -150,14 +167,33 @@ class TonicSolfaPDFRenderer:
             self.c.drawRightString(self.page_width - self.margin_left, self.y_position, self.song.comment)
             self.y_position -= self.small_font_size + 3
 
-        # Key, Tempo, Time Signature line
-        self.c.setFont("Helvetica", self.header_font_size)
-        info_parts = [f"Key: {self.song.key}", f"Time: {self.song.time_sig[0]}/{self.song.time_sig[1]}"]
-        if self.song.tempo:
-            info_parts.append(f"Tempo: {self.song.tempo}")
+        # Key, Time Signature line (bold)
+        self.c.setFont("Helvetica-Bold", self.header_font_size)
+        prefix_parts = [f"{self.song.keyheader} {self.song.key}", f"{self.song.time_sig[0]}/{self.song.time_sig[1]}"]
+        prefix_text = "    ".join(prefix_parts) + "    "
+        self.c.drawString(self.margin_left, self.y_position, prefix_text)
+        x = self.margin_left + self.c.stringWidth(prefix_text, "Helvetica-Bold", self.header_font_size)
 
-        info_text = "    ".join(info_parts)
-        self.c.drawString(self.margin_left, self.y_position, info_text)
+        # Tempo marking — split rendering so ♩ uses the music symbol font
+        if self.song.tempomarking or self.song.tempo:
+            if self.song.tempomarking:
+                self.c.setFont("Helvetica-Bold", self.header_font_size)
+                self.c.drawString(x, self.y_position, self.song.tempomarking + " ")
+                x += self.c.stringWidth(self.song.tempomarking + " ", "Helvetica-Bold", self.header_font_size)
+            if self.song.tempo:
+                quarter = spec["navigation"]["quarter_note_symbol"]
+                self.c.setFont(MUSIC_SYMBOL_FONT, self.header_font_size)
+                self.c.drawString(x, self.y_position, quarter)
+                x += self.c.stringWidth(quarter, MUSIC_SYMBOL_FONT, self.header_font_size)
+                self.c.setFont("Helvetica-Bold", self.header_font_size)
+                bpm_text = f" = {self.song.tempo}"
+                self.c.drawString(x, self.y_position, bpm_text)
+                x += self.c.stringWidth(bpm_text, "Helvetica-Bold", self.header_font_size)
+
+        if self.song.meter:
+            self.c.setFont("Helvetica-Bold", self.header_font_size)
+            self.c.drawString(x, self.y_position, f"    {self.song.meter}")
+
         self.y_position -= self.header_font_size + 8
 
     def _draw_all_blocks(self):
@@ -496,7 +532,7 @@ class TonicSolfaPDFRenderer:
                             dedup = (key, "key_change", note.key_change)
                             if dedup not in seen_texts:
                                 seen_texts.add(dedup)
-                                add_item(key, center_x, f"Key: {note.key_change}")
+                                add_item(key, center_x, f"{self.song.keyheader} {note.key_change}")
 
         # Convert to sorted list
         result = sorted(items_by_position.values(), key=lambda x: x['order'])

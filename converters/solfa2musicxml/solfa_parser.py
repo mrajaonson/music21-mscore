@@ -26,7 +26,7 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
 
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith('#'):
+        if stripped.startswith('//'):
             remaining.append(line)
             continue
         if not header_done and stripped:
@@ -576,7 +576,7 @@ def parse_file(filepath: str) -> dict:
             continue
 
         # Skip comment lines
-        if stripped.startswith('#'):
+        if stripped.startswith('//'):
             continue
 
         if _is_note_line(stripped):

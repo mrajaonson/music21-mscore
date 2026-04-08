@@ -39,16 +39,18 @@ defaults:
 header:
   # Format: :PROPNAME: value
   # Unknown property names are silently skipped — not an error.
-  # A line whose first non-whitespace character is '#' is a comment (entire line ignored).
-  # '#' after any content on a line is literal text, NOT a comment.
-  comment_char: "#"
+  # A line whose first non-whitespace characters are '//' is a comment (entire line ignored).
+  # '//' after any content on a line is literal text, NOT a comment.
+  comment_char: "//"
   prop_prefix: ":"      # property lines start and end the name with ':'
   prop_suffix: ":"
 
   # Property names by parse type
-  string_props:  [title, author, composer, key, meter, comment, date, transcription, copyright]
+  # 'author' and 'composer' are repeatable — multiple occurrences accumulate into a list.
+  string_props:  [title, author, composer, key, keyheader, meter, comment, date, transcription, copyright, tempomarking]
   int_props:     [tempo, octave]
   special_props: [timesig]   # parsed as "N/D" → two integers
+  flag_props:    [gendate]   # boolean flags — presence alone activates them (no value needed)
 
 
 # -----------------------------------------------------------------------------
@@ -377,9 +379,10 @@ navigation:
   # Chainable in any order with dynamics and fermata: (^)(FINE)(p)d
 
   # Unicode musical symbols
-  coda_symbol:    "\U0001D10C"   # 𝄌
-  segno_symbol:   "\U0001D10B"   # 𝄋
-  fermata_symbol: "\U0001D110"   # 𝄐
+  coda_symbol:         "\U0001D10C"   # 𝄌
+  segno_symbol:        "\U0001D10B"   # 𝄋
+  fermata_symbol:      "\U0001D110"   # 𝄐
+  quarter_note_symbol: "\u2669"        # ♩ quarter note (for tempo marking)
 
   markers:
     DC:    "D.C."

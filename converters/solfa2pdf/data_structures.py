@@ -119,12 +119,18 @@ class Block:
 class Song:
     """Complete parsed song"""
     title: str = ""
-    author: str = ""
-    composer: str = ""
+    authors: List[str] = field(default_factory=list)
+    composers: List[str] = field(default_factory=list)
     key: str = "C"
+    keyheader: str = "Key:"
     tempo: int = 120
     time_sig: Tuple[int, int] = (4, 4)
     meter: str = ""
     octave: int = 4
     comment: str = ""
+    copyright: str = ""
+    date: str = ""
+    transcription: str = ""
+    tempomarking: str = ""
+    gendate: bool = False
     blocks: List[Block] = field(default_factory=list)

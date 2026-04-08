@@ -51,8 +51,8 @@ def reformat(input_path: str, output_path: str = None):
     result = []
 
     for line in lines:
-        # Skip comment lines (optionally indented #)
-        if line.lstrip().startswith('#'):
+        # Skip comment lines (optionally indented //)
+        if line.lstrip().startswith('//'):
             pass
         elif _is_note_line(line):
             line = _reformat_note_line(line)
