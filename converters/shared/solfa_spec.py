@@ -23,7 +23,6 @@ config.py is kept only as a backward-compatibility shim.
 """
 
 import importlib.resources
-import os
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +33,8 @@ import yaml
 # Loader
 # ---------------------------------------------------------------------------
 
+_SPEC_FILENAME = "solfadoc-spec.yaml"
+
 def _find_spec_file() -> Path:
     """
     Locate solfadoc-spec.yaml. Search order:
@@ -41,18 +42,18 @@ def _find_spec_file() -> Path:
       2. Package resources (installed via pip)
     """
     # 1. Repository root (development / editable install)
-    repo_root = Path(__file__).parent.parent.parent / "solfadoc-spec.yaml"
+    repo_root = Path(__file__).parent.parent.parent / _SPEC_FILENAME
     if repo_root.exists():
         return repo_root
 
     # 2. Same directory as this script (fallback)
-    local = Path(__file__).parent / "solfadoc-spec.yaml"
+    local = Path(__file__).parent / _SPEC_FILENAME
     if local.exists():
         return local
 
     # 3. Installed package — look in package resources
     try:
-        ref = importlib.resources.files(__package__ or "solfa_spec") / "solfadoc-spec.yaml"
+        ref = importlib.resources.files(__package__ or "solfa_spec") / _SPEC_FILENAME
         with importlib.resources.as_file(ref) as path:
             if path.exists():
                 return path
@@ -114,7 +115,7 @@ def _build_derived(data: dict) -> None:
 _spec: dict[str, Any] | None = None
 
 
-def _get_spec() -> dict[str, Any]:
+def _get_spec() -> dict[str, Any] | None:
     global _spec
     if _spec is None:
         _spec = _load()

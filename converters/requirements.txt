@@ -2,3 +2,10 @@ music21
 fonttools
 reportlab
 pyyaml
+pysonar
+pdf2image
+pillow
+pytesseract
+requests
+urllib3
+charset-normalizer

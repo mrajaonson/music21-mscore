@@ -63,9 +63,9 @@ A m : d : d ! d : d : d
 ## Requirements
 
 - Python 3.10+
-- `reportlab` (for solfa2pdf): `pip install reportlab`
-- `music21` (for solfa2musicxml): `pip install music21`
-- `pdftotext` (for pdf2solfa): `sudo apt install poppler-utils`
+- `reportlab` (for solfa2pdf)
+- `music21` (for solfa2musicxml)
+- `pdftotext` (for pdf2solfa)
 - `tesseract-ocr`, `pytesseract`, `pdf2image`, `Pillow` (for pdfimg2solfa)
 
 ## License

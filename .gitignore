@@ -212,3 +212,4 @@ outputs
 **/*.DS_Store
 
 **/.claude
+.sonar/

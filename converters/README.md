@@ -2,100 +2,53 @@
 
 Five specialized converters for tonic solfa notation.
 
-## Converters
+## Requirements
 
-### 1. solfa2pdf
-**Solfa → PDF** (direct hymnal-style rendering)
+* MuseScore 4 (optional, for PDF generation)
 
-Converts tonic solfa text directly to a traditional hymnal-style PDF with voice parts and aligned lyrics.
+```shell
+python3 -m venv .venv
 
-```bash
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r converters/requirements.txt
+
+# linux
+sudo apt install poppler-utils tesseract-ocr libtesseract-dev fonts-freefont-ttf
+
+# mac
+brew install poppler
+```
+
+## Usage
+
+```shell
+# Solfa → PDF (direct hymnal-style rendering)
+# Converts tonic solfa text directly to a traditional hymnal-style PDF with voice parts and aligned lyrics.
 python3 -m converters.solfa2pdf sample.txt [output.pdf]
-```
 
-**Requirements:**
-- `reportlab`: `pip install reportlab`
-
-**Output:**
-- `.pdf` (hymnal-style PDF)
-
----
-
-### 2. solfa2musicxml
-**Solfa → MusicXML** (compatible with MuseScore 4)
-
-Converts tonic solfa text notation to MusicXML, then optionally to PDF via MuseScore.
-
-```bash
+# Solfa → MusicXML (compatible with MuseScore 4)
+# Converts tonic solfa text notation to MusicXML, then optionally to PDF via MuseScore.
 python3 -m converters.solfa2musicxml sample.txt
-```
 
-**Requirements:**
-- `music21`: `pip install music21`
-- MuseScore 4 (optional, for PDF generation)
-
-**Output:**
-- `.xml` (MusicXML file for MuseScore)
-- `.pdf` (if mscore is available)
-
----
-
-### 3. pdf2solfa
-**Digital PDF → Solfa text** (text extraction)
-
-Extracts text from digital (non-scanned) PDFs and wraps it with tonic solfa metadata headers.
-
-```bash
+# Digital PDF → Solfa text** (text extraction)
+# Extracts text from digital (non-scanned) PDFs and wraps it with tonic solfa metadata headers.
 python3 -m converters.pdf2solfa input.pdf [output.txt]
-```
 
-**Requirements:**
-- `poppler-utils`: `sudo apt install poppler-utils`
-
-**Output:**
-- `.txt` (solfa text with metadata headers to fill in)
-
----
-
-### 4. pdfimg2solfa
-**Scanned PDF / Images → Solfa text** (OCR-based)
-
-Uses OCR (tesseract) to extract text from scanned PDFs or images and wraps it with tonic solfa metadata headers.
-
-```bash
+# Scanned PDF / Images → Solfa text** (OCR-based)
+# Uses OCR (tesseract) to extract text from scanned PDFs or images and wraps it with tonic solfa metadata headers.
 python3 -m converters.pdfimg2solfa scanned.pdf [output.txt]
 python3 -m converters.pdfimg2solfa page.jpg [output.txt]
-```
 
-**Requirements:**
-- `tesseract-ocr`: `sudo apt install tesseract-ocr libtesseract-dev`
-- `pytesseract`, `pdf2image`, `Pillow`: `pip install pytesseract pdf2image Pillow`
-
-**Output:**
-- `.txt` (solfa text with metadata headers and OCR results)
-
-**Note:** OCR results may contain errors. Review and correct:
-- Metadata headers (`:title:`, `:author:`, etc.)
-- Note symbols (`d`, `r`, `m`, `f`, `s`, `l`, `t`)
-- Measure separators (`|`) and beat separators (`:`)
-
----
-
-### 5. solfareformat
-**Solfa text → Reformatted Solfa text**
-
-Normalizes and reformats tonic solfa text files (spacing, barlines, beat separators).
-
-```bash
+# Solfa text → Reformatted Solfa text
+# Normalizes spacing and beat separators in note lines of a tonic solfa text file.
 python3 -m converters.solfareformat input.txt [output.txt]
 ```
-
----
 
 ## Shared Utilities
 
 `shared/` contains common utilities:
-- `solfa_spec.py` — Loads the tonic solfa notation spec from `solfadoc-spec.yaml`
+- `solfa_spec.py` — Loads `solfadoc-spec.yaml` (the notation spec) and exposes it as a plain dict; import via `from shared import spec`
 - `solfa_metadata.py` — Default metadata headers for converters
 
 ---

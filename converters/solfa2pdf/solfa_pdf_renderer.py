@@ -7,13 +7,31 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 def _resolve_music_font() -> str:
+    import os
+    from pathlib import Path
     pref = spec["export"]["music_symbol_font_preference"]
     fallback = spec["export"]["music_symbol_font_fallback"]
-    try:
-        pdfmetrics.registerFont(TTFont(pref, f'/Library/Fonts/{pref}.ttf'))
-        return pref
-    except Exception:
-        return fallback
+    search_paths = [
+        # Bundled font (always tried first)
+        Path(__file__).parent / "fonts" / f"{pref}.ttf",
+        # macOS system and Homebrew (cask)
+        f"/Library/Fonts/{pref}.ttf",
+        os.path.expanduser(f"~/Library/Fonts/{pref}.ttf"),
+        f"/System/Library/Fonts/Supplemental/{pref}.ttf",
+        # Debian/Ubuntu
+        f"/usr/share/fonts/truetype/freefont/{pref}.ttf",
+        # Fedora/RHEL
+        f"/usr/share/fonts/gnu-free/{pref}.ttf",
+        # Arch
+        f"/usr/share/fonts/gnu-free-fonts/{pref}.ttf",
+    ]
+    for path in search_paths:
+        try:
+            pdfmetrics.registerFont(TTFont(pref, str(path)))
+            return pref
+        except Exception:
+            continue
+    return fallback
 
 MUSIC_SYMBOL_FONT = _resolve_music_font()
 from .data_structures import (Song)
@@ -47,7 +65,7 @@ class TonicSolfaPDFRenderer:
         self.subtitle_font_size = 10
         self.header_font_size = 9
         self.note_font_size = 9
-        self.lyric_font_size = 8
+        self.lyric_font_size = 9
         self.small_font_size = 7
 
         # Layout settings

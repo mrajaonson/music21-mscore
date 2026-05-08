@@ -19,18 +19,21 @@ meta:
 # DEFAULTS — file-level properties when not specified in the .solfa header
 # -----------------------------------------------------------------------------
 defaults:
-  title:    "Untitled"
-  author:   ""
-  composer: ""
-  key:      "C"
-  tempo:    null
-  timesig:  "4/4"
-  meter:    null
-  octave:   4         # base octave for unmarked notes (middle-C octave)
-  comment: ""
-  date:    null
+  title:         "Untitled"
+  author:        ""
+  composer:      ""
+  key:           "C"
+  keyheader:     "Key:"
+  tempo:         null
+  tempomarking:  ""
+  timesig:       "4/4"
+  meter:         ""
+  octave:        4         # base octave for unmarked notes (middle-C octave)
+  comment:       ""
+  date:          null
   transcription: null
-  copyright: null
+  copyright:     null
+  gendate:       false
 
 
 # -----------------------------------------------------------------------------

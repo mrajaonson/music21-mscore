@@ -1,5 +1,5 @@
 import sys
-from .converter import convert
+from .converter import reformat
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -9,4 +9,4 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2] if len(sys.argv) > 2 else None
 
-    convert(input_file, output_file)
+    reformat(input_file, output_file)
