@@ -53,7 +53,7 @@ header:
   string_props:  [title, author, composer, key, keyheader, meter, comment, date, transcription, copyright, tempomarking]
   int_props:     [tempo, octave]
   special_props: [timesig]   # parsed as "N/D" → two integers
-  flag_props:    [gendate]   # boolean flags — presence alone activates them (no value needed)
+  flag_props:    [gendate]   # boolean flags — must be set to 'true' explicitly to activate
 
 
 # -----------------------------------------------------------------------------
@@ -423,3 +423,18 @@ export:
 
   # Font for notes and lyrics rendering in PDF
   notation_font: "Times-Roman"
+
+
+# -----------------------------------------------------------------------------
+# NOTES SECTION — free-text annotations at the end of a .solfa file
+# -----------------------------------------------------------------------------
+notes_section:
+  marker: "[notes]"   # must appear alone on a line
+
+  # Rules:
+  # 1. Always placed at the very end of the file.
+  # 2. Everything after the marker line (to EOF) is plain-text notes content.
+  # 3. No closing delimiter — EOF ends the section.
+  # 4. Only one notes section per file.
+  # 5. MusicXML export: maps to <miscellaneous-field name="notes"> inside <identification>.
+  # 6. PDF export: ignored (not rendered).

@@ -14,6 +14,13 @@ class TonicSolfaParser:
         """Parse the complete tonic solfa text"""
         lines = text.strip().split('\n')
 
+        # Strip [notes] section — everything from the marker to EOF is ignored in PDF
+        marker = spec["notes_section"]["marker"]
+        for i, line in enumerate(lines):
+            if line.strip() == marker:
+                lines = lines[:i]
+                break
+
         # Initialize song with defaults
         for key, value in spec["defaults"].items():
             if key == "timesig":
@@ -64,7 +71,7 @@ class TonicSolfaParser:
 
         if prop in set(spec["header"]["flag_props"]):
             if hasattr(self.song, prop):
-                setattr(self.song, prop, True)
+                setattr(self.song, prop, value.lower() == "true")
         elif prop in set(spec["header"]["string_props"]):
             if prop in ("author", "composer"):
                 attr = prop + "s"  # authors / composers

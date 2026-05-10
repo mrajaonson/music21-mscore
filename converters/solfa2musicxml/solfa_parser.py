@@ -549,14 +549,27 @@ def _is_note_line(line: str) -> bool:
     return "|" in line
 
 
+def _extract_notes_section(lines: list[str]) -> tuple[list[str], str]:
+    """Split lines into music lines and plain-text notes content.
+    The [notes] marker (alone on a line) starts the notes section; everything
+    after it (to EOF) is notes content."""
+    marker = spec["notes_section"]["marker"]
+    for i, line in enumerate(lines):
+        if line.strip() == marker:
+            notes_content = "\n".join(lines[i + 1:]).strip()
+            return lines[:i], notes_content
+    return lines, ""
+
+
 def parse_file(filepath: str) -> dict:
     """
     Parse a tonic solfa .txt file.
-    Returns dict with keys: properties, voices, lyrics.
+    Returns dict with keys: properties, voices, lyrics, notes.
     """
     text = Path(filepath).read_text(encoding="utf-8")
     lines = text.splitlines()
 
+    lines, notes_content = _extract_notes_section(lines)
     props, remaining = parse_header(lines)
 
     voice_data: dict[str, list] = {}
@@ -621,4 +634,5 @@ def parse_file(filepath: str) -> dict:
         "properties": props,
         "voices": voice_data,
         "lyrics": lyrics_data,
+        "notes": notes_content,
     }

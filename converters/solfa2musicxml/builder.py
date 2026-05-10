@@ -259,6 +259,8 @@ def build_score(parsed: dict) -> stream.Score:
         md.lyricist = props["author"]
     md.date = date.today().isoformat()
     md.copyright = f"Generated on {date.today().strftime('%Y-%m-%d')}"
+    if parsed.get("notes"):
+        md.miscellaneous = {"notes": parsed["notes"]}
     score.metadata = md
 
     time_sig_str = props.get("timesig", spec["defaults"]["timesig"])

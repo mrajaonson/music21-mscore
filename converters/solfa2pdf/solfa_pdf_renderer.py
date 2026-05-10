@@ -79,11 +79,11 @@ class TonicSolfaPDFRenderer:
         # Calculate measures per line based on time signature
         beats_per_measure = song.time_sig[0]
         if beats_per_measure <= 3:
-            self.measures_per_line = 5
+            self.measures_per_line = 6
         elif beats_per_measure <= 4:
-            self.measures_per_line = 4
+            self.measures_per_line = 5
         else:
-            self.measures_per_line = 3
+            self.measures_per_line = 4
 
         # Track state
         self.current_page = 1
@@ -556,6 +556,12 @@ class TonicSolfaPDFRenderer:
         result = sorted(items_by_position.values(), key=lambda x: x['order'])
         return result
 
+    def _above_text_font(self, text: str) -> tuple:
+        """Return (font_name, font_size) for an above-staff text item."""
+        if text in spec["dynamics"]["valid_dynamics"]:
+            return (self.notation_font.replace("-Roman", "-Italic"), self.small_font_size + 1)
+        return ("Helvetica-Bold", self.small_font_size + 1)
+
     def _draw_above_staff_line(self, items: List[Dict], start_y: float):
         """Draw all above-staff items on ONE line. Each item's texts are joined by spaces
         and centered over the note's center_x, with overlap prevention."""
@@ -579,7 +585,8 @@ class TonicSolfaPDFRenderer:
                     if text[idx + 1:]:
                         total_width += self.c.stringWidth(text[idx + 1:], "Helvetica-Bold", self.small_font_size)
                 else:
-                    total_width += self.c.stringWidth(text, "Helvetica-Bold", self.small_font_size + 1)
+                    font_name, font_size = self._above_text_font(text)
+                    total_width += self.c.stringWidth(text, font_name, font_size)
             item['_width'] = total_width
             item['_draw_x'] = item['center_x'] - total_width / 2
 
@@ -641,7 +648,12 @@ class TonicSolfaPDFRenderer:
                 self.c.drawString(draw_x, draw_y, "  ")
                 draw_x += self.c.stringWidth("  ", "Helvetica-Bold", self.small_font_size + 1)
             contains_music = any(sym in text for sym in music_symbols)
-            if contains_music:
+            if text in spec["dynamics"]["valid_dynamics"]:
+                font_name, font_size = self._above_text_font(text)
+                self.c.setFont(font_name, font_size)
+                self.c.drawString(draw_x, draw_y, text)
+                draw_x += self.c.stringWidth(text, font_name, font_size)
+            elif contains_music:
                 idx = len(text) - 1
                 while idx >= 0 and text[idx].isdigit():
                     idx -= 1

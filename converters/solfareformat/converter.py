@@ -15,6 +15,7 @@ Usage:
 import sys
 import re
 from pathlib import Path
+from ..shared import spec
 
 
 def _is_note_line(line: str) -> bool:
@@ -50,7 +51,18 @@ def reformat(input_path: str, output_path: str = None):
     lines = text.split('\n')
     result = []
 
+    marker = spec["notes_section"]["marker"]
+    in_notes = False
+
     for line in lines:
+        if line.strip() == marker:
+            in_notes = True
+
+        if in_notes:
+            # Notes section is passed through untouched
+            result.append(line)
+            continue
+
         # Skip comment lines (optionally indented //)
         if line.lstrip().startswith('//'):
             pass
