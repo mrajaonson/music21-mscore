@@ -14,10 +14,11 @@ class TonicSolfaParser:
         """Parse the complete tonic solfa text"""
         lines = text.strip().split('\n')
 
-        # Strip [notes] section — everything from the marker to EOF is ignored in PDF
+        # Extract [notes] section — everything from the marker to EOF
         marker = spec["notes_section"]["marker"]
         for i, line in enumerate(lines):
             if line.strip() == marker:
+                self.song.notes = "\n".join(lines[i + 1:]).strip()
                 lines = lines[:i]
                 break
 

@@ -217,9 +217,10 @@ def _apply_navigation(measure: stream.Measure, nav_str: str):
         if el.offset >= last_offset:
             last_offset = el.offset
     measure.insert(last_offset, te)
-    # DC, DCF, DCC → repeat end barline (double bar with dots)
+    # DC, DCF, DCC → final barline (not a repeat barline — avoids music21
+    # collapsing multiple backward repeats and dropping the first marker)
     if base in ("DC", "DCF", "DCC"):
-        measure.rightBarline = bar.Repeat(direction="end")
+        measure.rightBarline = bar.Barline("final")
     # DS, DSF, DSC → double barline (no dots)
     elif base in ("DS", "DSF", "DSC"):
         measure.rightBarline = bar.Barline("double")
@@ -232,7 +233,7 @@ def _apply_navigation_barline_only(measure: stream.Measure, nav_str: str):
     """Apply only the barline (no text) for non-first voices."""
     base = _nav_base(nav_str)
     if base in ("DC", "DCF", "DCC"):
-        measure.rightBarline = bar.Repeat(direction="end")
+        measure.rightBarline = bar.Barline("final")
     elif base in ("DS", "DSF", "DSC"):
         measure.rightBarline = bar.Barline("double")
     elif base == "FINE":

@@ -133,4 +133,5 @@ class Song:
     transcription: str = ""
     tempomarking: str = ""
     gendate: bool = False
+    notes: str = ""
     blocks: List[Block] = field(default_factory=list)

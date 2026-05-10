@@ -102,10 +102,48 @@ class TonicSolfaPDFRenderer:
         # Draw all blocks
         self._draw_all_blocks()
 
+        # Draw notes section if present
+        if self.song.notes:
+            self._draw_notes_section()
+
         # Draw footer on last page
         self._draw_page_footer()
 
         self.c.save()
+
+    def _draw_notes_section(self):
+        """Render the plain-text notes section at the end of the PDF."""
+        # Render each line of the notes content with word wrapping
+        self.c.setFont(self.notation_font, self.note_font_size)
+        line_height = self.note_font_size + 3
+        notes_x = self._block_start_x
+        max_width = self.page_width - self.margin_right - notes_x
+
+        for paragraph in self.song.notes.split("\n"):
+            # Blank line = paragraph break
+            if not paragraph.strip():
+                self.y_position -= line_height // 2
+                self._check_page_space(line_height)
+                continue
+
+            # Word-wrap the paragraph
+            words = paragraph.split()
+            current_line = ""
+            for word in words:
+                test_line = (current_line + " " + word).strip()
+                if self.c.stringWidth(test_line, self.notation_font, self.note_font_size) <= max_width:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        self._check_page_space(line_height)
+                        self.c.drawString(notes_x, self.y_position, current_line)
+                        self.y_position -= line_height
+                    current_line = word
+
+            if current_line:
+                self._check_page_space(line_height)
+                self.c.drawString(notes_x, self.y_position, current_line)
+                self.y_position -= line_height
 
     def _draw_page_header(self):
         """Draw page header with measure numbers indicator"""
@@ -179,10 +217,10 @@ class TonicSolfaPDFRenderer:
                 self.c.drawRightString(self.page_width - self.margin_left, self.y_position, self.song.composers[i])
             self.y_position -= self.subtitle_font_size + 3
 
-        # Comments (right-aligned, under composer)
+        # Comments (centered, under composer)
         if self.song.comment:
             self.c.setFont("Helvetica-Oblique", self.small_font_size)
-            self.c.drawRightString(self.page_width - self.margin_left, self.y_position, self.song.comment)
+            self.c.drawCentredString(self.page_width / 2, self.y_position, self.song.comment)
             self.y_position -= self.small_font_size + 3
 
         # Key, Time Signature line (bold)
@@ -257,6 +295,28 @@ class TonicSolfaPDFRenderer:
         block_boundaries = set()
         for bl in block_lyrics:
             block_boundaries.add(bl['start'])
+
+        # Pre-compute all line groups to find the max measures per line,
+        # then derive a single centering offset shared by all lines.
+        show_voice_labels = not (set(voice_order) == set(spec["voices"]["default_order"]) and len(voice_order) == 4)
+        voice_label_width = 8 * mm if show_voice_labels else 0
+        available_width = self.content_width - voice_label_width
+        measure_width = available_width / self.measures_per_line
+
+        line_groups = []
+        idx = 0
+        while idx < total_measures:
+            end = min(idx + self.measures_per_line, total_measures)
+            for boundary in sorted(block_boundaries):
+                if idx < boundary < end:
+                    end = boundary
+                    break
+            line_groups.append((idx, end))
+            idx = end
+
+        max_line_measures = max(end - start for start, end in line_groups) if line_groups else self.measures_per_line
+        block_width = voice_label_width + max_line_measures * measure_width
+        self._block_start_x = self.margin_left + (self.content_width - block_width) / 2
 
         # Draw measures in groups (lines), respecting block boundaries
         measure_idx = 0
@@ -380,8 +440,7 @@ class TonicSolfaPDFRenderer:
         available_width = self.content_width - voice_label_width
         measure_width = available_width / self.measures_per_line
 
-        # Starting position
-        start_x = self.margin_left
+        start_x = self._block_start_x
         start_y = self.y_position
 
         # ── Collect ALL above-staff markers into a unified list ──
