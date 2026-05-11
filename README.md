@@ -68,6 +68,14 @@ A m : d : d ! d : d : d
 - `pdftotext` (for pdf2solfa)
 - `tesseract-ocr`, `pytesseract`, `pdf2image`, `Pillow` (for pdfimg2solfa)
 
+## Sonarqube
+
+```shell
+tox
+
+pysonar -Dsonar.token=SONAR_TOKEN
+```
+
 ## License
 
 See [LICENSE](LICENSE).

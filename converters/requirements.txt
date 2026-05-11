@@ -9,3 +9,5 @@ pytesseract
 requests
 urllib3
 charset-normalizer
+tox
+coverage
