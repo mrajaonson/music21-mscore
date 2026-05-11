@@ -444,10 +444,13 @@ def build_score(parsed: dict) -> stream.Score:
 
             # Apply navigation after all notes/rests are in the measure
             if measure_nav and is_first_part:
-                nav_markers[m_idx] = measure_nav
-                _apply_navigation(m21_measure, measure_nav)
+                nav_list = measure_nav if isinstance(measure_nav, list) else [measure_nav]
+                nav_markers[m_idx] = nav_list
+                for nav in nav_list:
+                    _apply_navigation(m21_measure, nav)
             elif not is_first_part and m_idx in nav_markers:
-                _apply_navigation_barline_only(m21_measure, nav_markers[m_idx])
+                for nav in nav_markers[m_idx]:
+                    _apply_navigation_barline_only(m21_measure, nav)
 
             part.append(m21_measure)
 

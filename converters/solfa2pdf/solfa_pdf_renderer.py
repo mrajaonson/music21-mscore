@@ -452,7 +452,7 @@ class TonicSolfaPDFRenderer:
         # Draw all above-staff markers on the SAME line if any exist
         if above_staff_items:
             self._draw_above_staff_line(above_staff_items, start_y)
-            start_y -= 12  # Single vertical offset for the combined row
+            start_y -= 9  # Single vertical offset for the combined row
 
         # Draw measure numbers above first voice
         self.c.setFont("Helvetica", self.small_font_size)
@@ -640,7 +640,7 @@ class TonicSolfaPDFRenderer:
                     idx = len(text) - 1
                     while idx >= 0 and text[idx].isdigit():
                         idx -= 1
-                    total_width += self.c.stringWidth(text[:idx + 1], MUSIC_SYMBOL_FONT, self.small_font_size + 6)
+                    total_width += self.c.stringWidth(text[:idx + 1], MUSIC_SYMBOL_FONT, self.small_font_size + 9)
                     if text[idx + 1:]:
                         total_width += self.c.stringWidth(text[idx + 1:], "Helvetica-Bold", self.small_font_size)
                 else:
@@ -680,7 +680,7 @@ class TonicSolfaPDFRenderer:
                 symbol_part = text[:idx + 1]
                 number_suffix = text[idx + 1:]
 
-                segments.append((symbol_part, MUSIC_SYMBOL_FONT, self.small_font_size + 6))
+                segments.append((symbol_part, MUSIC_SYMBOL_FONT, self.small_font_size + 9))
                 if number_suffix:
                     segments.append((number_suffix, "Helvetica-Bold", self.small_font_size))
             else:
@@ -693,9 +693,11 @@ class TonicSolfaPDFRenderer:
 
         # Draw centered
         draw_x = center_x - total_width / 2
+        base_size = self.small_font_size + 1
         for seg_text, seg_font, seg_size in segments:
+            seg_y = draw_y - (seg_size - base_size) / 2 if seg_size > base_size else draw_y
             self.c.setFont(seg_font, seg_size)
-            self.c.drawString(draw_x, draw_y, seg_text)
+            self.c.drawString(draw_x, seg_y, seg_text)
             draw_x += self.c.stringWidth(seg_text, seg_font, seg_size)
 
     def _draw_above_text_at(self, texts: List[str], draw_x: float, draw_y: float):
@@ -718,9 +720,11 @@ class TonicSolfaPDFRenderer:
                     idx -= 1
                 symbol_part = text[:idx + 1]
                 number_suffix = text[idx + 1:]
-                self.c.setFont(MUSIC_SYMBOL_FONT, self.small_font_size + 6)
-                self.c.drawString(draw_x, draw_y, symbol_part)
-                draw_x += self.c.stringWidth(symbol_part, MUSIC_SYMBOL_FONT, self.small_font_size + 6)
+                music_size = self.small_font_size + 9
+                symbol_y = draw_y - (music_size - (self.small_font_size + 1)) / 2
+                self.c.setFont(MUSIC_SYMBOL_FONT, music_size)
+                self.c.drawString(draw_x, symbol_y, symbol_part)
+                draw_x += self.c.stringWidth(symbol_part, MUSIC_SYMBOL_FONT, music_size)
                 if number_suffix:
                     self.c.setFont("Helvetica-Bold", self.small_font_size)
                     self.c.drawString(draw_x, draw_y, number_suffix)

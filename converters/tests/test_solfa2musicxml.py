@@ -275,7 +275,7 @@ def test_parse_voice_line_no_label():
 
 def test_parse_voice_line_navigation_extracted_to_measure():
     _, measures = parse_voice_line("| (DC)d:r:m:f |")
-    assert measures[0]["navigation"] == "DC"
+    assert measures[0]["navigation"] == ["DC"]
     # navigation cleared from the note event itself
     beats = measures[0]["beats"]
     for beat in beats:
@@ -286,10 +286,16 @@ def test_parse_voice_line_navigation_extracted_to_measure():
 def test_parse_voice_line_nav_only_beat_dropped():
     # |(DC)| beat with navigation only should be dropped, not a real beat
     _, measures = parse_voice_line("| d:r:(DC):f |")
-    assert measures[0]["navigation"] == "DC"
+    assert measures[0]["navigation"] == ["DC"]
     # The nav-only beat is removed; remaining beats cover d, r, f
     total_beats = len(measures[0]["beats"])
     assert total_beats == 3
+
+
+def test_parse_voice_line_multiple_navs_same_measure():
+    # DC and CODA in the same measure — both must be preserved
+    _, measures = parse_voice_line("| (DC)d : - ! - : (CODA)l |")
+    assert measures[0]["navigation"] == ["DC", "CODA"]
 
 
 def test_parse_voice_line_modulation_recorded():

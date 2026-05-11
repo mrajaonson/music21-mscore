@@ -392,7 +392,7 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
         # never creates extra events.
         # Correct usage: (DC)f  → nav is prefix on the note
         #                (DC)   → nav alone as a beat (beat is dropped)
-        measure_nav = None
+        measure_navs = []
         cleaned_beats = []
         for beat_events in beats:
             # Check if this beat is just a nav-only rest: |(DC)|
@@ -401,13 +401,13 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
                     and beat_events[0].navigation
                     and not beat_events[0].dynamic
                     and not beat_events[0].fermata):
-                measure_nav = beat_events[0].navigation
+                measure_navs.append(beat_events[0].navigation)
                 # Drop this beat entirely — it's not real music
                 continue
             # Extract nav from note events: |(DC)f|
             for evt in beat_events:
                 if evt.navigation:
-                    measure_nav = evt.navigation
+                    measure_navs.append(evt.navigation)
                     evt.navigation = None
             cleaned_beats.append(beat_events)
 
@@ -415,7 +415,7 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
             "beats": cleaned_beats,
             "modulations": modulations,
             "key_changes": key_changes,
-            "navigation": measure_nav,
+            "navigation": measure_navs if measure_navs else None,
         })
 
     return label, measures
