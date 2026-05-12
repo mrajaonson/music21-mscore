@@ -30,6 +30,13 @@ object SolfaTokenTypes {
     val CHORD_CLOSE = IElementType("CHORD_CLOSE", SolfaLanguage)
     val LYRICS_PREFIX = IElementType("LYRICS_PREFIX", SolfaLanguage)
     val LYRICS_TEXT = IElementType("LYRICS_TEXT", SolfaLanguage)
+    val LYRICS_JOIN = IElementType("LYRICS_JOIN", SolfaLanguage)
+    val LYRICS_HYPHEN = IElementType("LYRICS_HYPHEN", SolfaLanguage)
+    val LYRICS_REST_SKIP = IElementType("LYRICS_REST_SKIP", SolfaLanguage)
+    val LYRICS_MUTE_DELIM = IElementType("LYRICS_MUTE_DELIM", SolfaLanguage)
+    val MODULATION_SEP = IElementType("MODULATION_SEP", SolfaLanguage)
+    val NOTES_SECTION_MARKER = IElementType("NOTES_SECTION_MARKER", SolfaLanguage)
+    val NOTES_SECTION_TEXT = IElementType("NOTES_SECTION_TEXT", SolfaLanguage)
     val NEWLINE = IElementType("NEWLINE", SolfaLanguage)
     val WHITESPACE = TokenType.WHITE_SPACE
     val BAD_CHARACTER = TokenType.BAD_CHARACTER

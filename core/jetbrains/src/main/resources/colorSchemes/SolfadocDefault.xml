@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scheme name="Default" version="142" parent_scheme="Default">
+  <attributes>
+
+    <!-- Comments -->
+    <option name="SOLFA_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="808080"/>
+        <option name="FONT_TYPE" value="2"/>
+      </value>
+    </option>
+
+    <!-- Header -->
+    <option name="SOLFA_HEADER_KEY">
+      <value/>
+    </option>
+    <option name="SOLFA_HEADER_DELIM">
+      <value>
+        <option name="FOREGROUND" value="000080"/>
+      </value>
+    </option>
+    <option name="SOLFA_HEADER_VALUE">
+      <value>
+        <option name="FOREGROUND" value="008000"/>
+      </value>
+    </option>
+
+    <!-- Voice label — dark amber bold -->
+    <option name="SOLFA_VOICE_LABEL">
+      <value>
+        <option name="FOREGROUND" value="7B4900"/>
+        <option name="FONT_TYPE" value="1"/>
+      </value>
+    </option>
+
+    <!-- Notes — default text color (black in light) -->
+    <option name="SOLFA_NOTE">
+      <value/>
+    </option>
+    <option name="SOLFA_CHROMATIC_NOTE">
+      <value/>
+    </option>
+
+    <!-- Structural music symbols — same color as header delimiter -->
+    <option name="SOLFA_REST">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_HOLD">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_BARLINE">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_BEAT_SEP">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_SUBBEAT_SEP">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_MODULATION_SEP">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_OCTAVE">
+      <value/>
+    </option>
+    <option name="SOLFA_DYNAMICS">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_NAVIGATION">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+    <option name="SOLFA_CHORD_BRACKET">
+      <value>
+        <option name="FOREGROUND" value="007700"/>
+      </value>
+    </option>
+
+    <!-- Lyrics -->
+    <option name="SOLFA_LYRICS_PREFIX">
+      <value>
+        <option name="FOREGROUND" value="871094"/>
+        <option name="FONT_TYPE" value="1"/>
+      </value>
+    </option>
+    <option name="SOLFA_LYRICS_TEXT">
+      <value>
+        <option name="FOREGROUND" value="444444"/>
+      </value>
+    </option>
+    <option name="SOLFA_LYRICS_HYPHEN">
+      <value>
+        <option name="FOREGROUND" value="999999"/>
+      </value>
+    </option>
+    <option name="SOLFA_LYRICS_JOIN">
+      <value>
+        <option name="FOREGROUND" value="000080"/>
+      </value>
+    </option>
+    <option name="SOLFA_LYRICS_REST_SKIP">
+      <value>
+        <option name="FOREGROUND" value="871094"/>
+      </value>
+    </option>
+    <option name="SOLFA_LYRICS_MUTE_DELIM">
+      <value>
+        <option name="FOREGROUND" value="999999"/>
+      </value>
+    </option>
+
+    <!-- Notes section -->
+    <option name="SOLFA_NOTES_SECTION_MARKER">
+      <value>
+        <option name="FOREGROUND" value="000080"/>
+        <option name="FONT_TYPE" value="1"/>
+      </value>
+    </option>
+    <option name="SOLFA_NOTES_SECTION_TEXT">
+      <value/>
+    </option>
+
+    <!-- Errors -->
+    <option name="SOLFA_BAD_CHARACTER">
+      <value>
+        <option name="FOREGROUND" value="FF0000"/>
+        <option name="FONT_TYPE" value="1"/>
+        <option name="ERROR_STRIPE_COLOR" value="FF0000"/>
+      </value>
+    </option>
+
+  </attributes>
+</scheme>

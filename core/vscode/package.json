@@ -30,6 +30,19 @@
         "scopeName": "source.solfa",
         "path": "./syntaxes/solfa.tmLanguage.json"
       }
-    ]
+    ],
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": "constant.language.voice-label.solfa",
+            "settings": {
+              "foreground": "#E5C07B",
+              "fontStyle": "bold"
+            }
+          }
+        ]
+      }
+    }
   }
 }

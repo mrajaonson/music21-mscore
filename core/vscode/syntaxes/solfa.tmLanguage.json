@@ -3,30 +3,178 @@
   "name": "Solfadoc",
   "scopeName": "source.solfa",
   "patterns": [
+    { "include": "#notes-section" },
     { "include": "#comment" },
-    { "include": "#header" },
+    { "include": "#header-comment" },
+    { "include": "#header-line" },
+    { "include": "#lyrics-line" },
+    { "include": "#voice-label" },
+    { "include": "#navigation" },
+    { "include": "#dynamics" },
+    { "include": "#chord" },
+    { "include": "#double-barline" },
     { "include": "#barline" },
+    { "include": "#soft-barline" },
+    { "include": "#modulation-sep" },
+    { "include": "#beat-sep" },
+    { "include": "#subbeat-sep" },
+    { "include": "#rest" },
+    { "include": "#hold" },
+    { "include": "#octave-up" },
+    { "include": "#octave-down" },
+    { "include": "#staccato" },
+    { "include": "#melisma" },
+    { "include": "#chromatic-note" },
     { "include": "#note" }
   ],
   "repository": {
+    "notes-section": {
+      "begin": "^(\\[notes\\])\\s*$",
+      "end": "(?=\\z)",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.notes-section.solfa" }
+      }
+    },
+
     "comment": {
       "name": "comment.line.number-sign.solfa",
       "match": "#.*$"
     },
-    "header": {
-      "match": "^([A-Za-z_]+)\\s*:\\s*(.*)$",
+
+    "header-comment": {
+      "name": "comment.line.double-slash.solfa",
+      "match": "^\\s*//.*$"
+    },
+
+    "header-line": {
+      "match": "^(\\s*)(:)([A-Za-z_][A-Za-z0-9_]*)(:)(.*)",
       "captures": {
-        "1": { "name": "keyword.other.header-key.solfa" },
-        "2": { "name": "string.unquoted.header-value.solfa" }
+        "2": { "name": "punctuation.definition.header.begin.solfa" },
+        "4": { "name": "punctuation.definition.header.end.solfa" },
+        "5": { "name": "string.unquoted.header-value.solfa" }
       }
     },
+
+    "lyrics-line": {
+      "begin": "^(\\d+|R)(?=[ \\t])",
+      "end": "$",
+      "beginCaptures": {
+        "1": { "name": "constant.other.lyrics-prefix.solfa" }
+      },
+      "patterns": [
+        { "include": "#lyrics-mute" },
+        { "name": "keyword.operator.join.solfa",       "match": "\\^" },
+        { "name": "punctuation.separator.hyphen.solfa", "match": "-" },
+        { "name": "constant.other.rest-skip.solfa",    "match": "\\*" }
+      ]
+    },
+
+    "lyrics-mute": {
+      "begin": "__",
+      "end": "__",
+      "beginCaptures": { "0": { "name": "punctuation.definition.mute.begin.solfa" } },
+      "endCaptures":   { "0": { "name": "punctuation.definition.mute.end.solfa"   } },
+      "contentName": "markup.italic.mute.solfa"
+    },
+
+    "voice-label": {
+      "match": "^\\s*(PR|PL|[SATB]\\d*)(?=[ \\t])",
+      "captures": {
+        "1": { "name": "constant.language.voice-label.solfa" }
+      }
+    },
+
+    "navigation": {
+      "name": "entity.name.label.navigation.solfa",
+      "match": "\\((?:DC[CF]?|DS[FC]?|FINE|TC|CODA|SEGNO)\\d*\\)"
+    },
+
+    "dynamics": {
+      "name": "storage.modifier.dynamics.solfa",
+      "match": "\\((?:ppp|pp|mp|mf|fff|ff|sfz|sf|fp|[pf]|[<>^]|cresc|dim|rit|accel)\\)"
+    },
+
+    "chord": {
+      "begin": "<",
+      "end": ">",
+      "beginCaptures": { "0": { "name": "punctuation.section.chord.begin.solfa" } },
+      "endCaptures":   { "0": { "name": "punctuation.section.chord.end.solfa"   } },
+      "patterns": [
+        { "include": "#chromatic-note" },
+        { "include": "#note" },
+        { "include": "#octave-up" },
+        { "include": "#octave-down" }
+      ]
+    },
+
+    "double-barline": {
+      "name": "punctuation.separator.barline.double.solfa",
+      "match": "\\|\\|"
+    },
+
     "barline": {
       "name": "punctuation.separator.barline.solfa",
       "match": "\\|"
     },
+
+    "soft-barline": {
+      "name": "punctuation.separator.barline.soft.solfa",
+      "match": "!"
+    },
+
+    "modulation-sep": {
+      "name": "keyword.operator.modulation.solfa",
+      "match": "/"
+    },
+
+    "beat-sep": {
+      "name": "punctuation.separator.beat.solfa",
+      "match": ":"
+    },
+
+    "subbeat-sep": {
+      "name": "punctuation.separator.subbeat.solfa",
+      "match": "\\."
+    },
+
+    "rest": {
+      "name": "constant.other.rest.solfa",
+      "match": "\\*"
+    },
+
+    "hold": {
+      "name": "constant.other.hold.solfa",
+      "match": "-"
+    },
+
+    "octave-up": {
+      "name": "constant.numeric.note.solfa",
+      "match": "'"
+    },
+
+    "octave-down": {
+      "name": "constant.numeric.note.solfa",
+      "match": "(?<=[drmfslteia'])(,+)"
+    },
+
+    "staccato": {
+      "name": "keyword.operator.staccato.solfa",
+      "match": "(?<![drmfslteia'])(,+)"
+    },
+
+    "melisma": {
+      "name": "keyword.operator.melisma.solfa",
+      "match": "_"
+    },
+
+    "chromatic-note": {
+      "name": "constant.numeric.chromatic-note.solfa",
+      "match": "(?:de|di|re|ri|fe|fi|se|si|le|li|ra|ma|sa|la|ta)(?![a-z])"
+    },
+
     "note": {
       "name": "constant.numeric.note.solfa",
-      "match": "[drmfslt][oi]?['\\.]*"
+      "match": "[drmfslt](?![a-z])"
     }
   }
 }

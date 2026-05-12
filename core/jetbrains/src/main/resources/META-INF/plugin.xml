@@ -21,5 +21,11 @@
         <lang.syntaxHighlighterFactory
             language="Solfadoc"
             implementationClass="org.solfadoc.highlight.SolfaSyntaxHighlighterFactory"/>
+
+        <colorSettingsPage
+            implementation="org.solfadoc.highlight.SolfaColorSettingsPage"/>
+
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/SolfadocDarcula.xml"/>
+        <additionalTextAttributes scheme="Default" file="colorSchemes/SolfadocDefault.xml"/>
     </extensions>
 </idea-plugin>
