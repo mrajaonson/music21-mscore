@@ -6,6 +6,8 @@ pysonar
 pdf2image
 pillow
 pytesseract
+opencv-python
+numpy
 requests
 urllib3
 charset-normalizer
